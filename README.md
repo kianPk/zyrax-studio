@@ -4,12 +4,12 @@
 
 Live: [kianpk.github.io/zyrax-studio](https://kianpk.github.io/zyrax-studio/)
 
-Layout and interaction language inspired by [lusion.co](https://lusion.co/) (homage — original code, assets, and branding for Zyrax / Kian).
+Visual / layout homage to [lusion.co](https://lusion.co/) — Aeonik-style type, jack balloon hero (`.buf` geometry + packed EXR matcap + physics), branded for Zyrax / Kian. Not affiliated with Lusion.
 
 ## Stack
 
 - Vite · Three.js · GSAP · Lenis
-- Satoshi + IBM Plex Mono
+- Aeonik · IBM Plex Mono
 - GitHub Pages via `docs/`
 
 ## Run

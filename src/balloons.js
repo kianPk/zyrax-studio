@@ -123,7 +123,9 @@ void main() {
   vec2 uvPerturbed = vec2(dot(x, viewNormal), dot(y, viewNormal)) * 0.5 + 0.5;
   vec3 matcapMap = texture2D(u_matcap, uvPerturbed).rgb;
   vec3 matcapDiff = vec3(0.25 + 0.75 * matcapMap.r);
-  vec3 matcapSpec = vec3(roughness > 0.5 ? matcapMap.g : matcapMap.b);
+  // Lusion packs rough→G / hard→B as specular; keep HDR punch so black jacks rim-light
+  float specChan = roughness > 0.5 ? matcapMap.g : matcapMap.b;
+  vec3 matcapSpec = vec3(specChan) * (roughness > 0.5 ? 1.15 : 1.65);
 
   reflections.rgb *= 0.75 + 0.25 * shadow * v_selfShadow;
   shadow = 0.6 + 0.4 * shadow;
@@ -131,10 +133,10 @@ void main() {
   vec3 color = albedo * matcapDiff + matcapSpec;
   color += reflections.rgb;
   color *= mix(0.55, 1.0, v_ao) * ao;
-  color += gi * 0.35;
-  color *= v_selfShadow;
+  color += gi * 0.45;
+  color *= mix(0.72, 1.0, v_selfShadow);
   color *= shadow;
-  color += u_bgColor * 0.03 * (1.0 - matcapDiff);
+  color += u_bgColor * 0.02 * (1.0 - matcapDiff);
 
   gl_FragColor.rgb = filmicToneMapping(pow(max(color, vec3(0.0)), vec3(2.2)));
   gl_FragColor.a = 1.0;
