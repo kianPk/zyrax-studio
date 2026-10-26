@@ -5,6 +5,7 @@ import { loadBuf } from './bufLoader.js'
 const COLORS = ['#061dfb', '#ADFF00', '#f6000e', '#7e09f5', '#ffc000']
 const PHYS = { density: 1, friction: 2, restitution: 0.8 }
 const GRAVITY_FACTOR = 40
+const NEIGHBOUR_COUNT = 8
 
 const balloonVert = /* glsl */ `
 attribute vec3 daoN;
@@ -16,6 +17,7 @@ uniform vec3 u_lightPosition;
 uniform vec4 u_selfPositionRadius;
 uniform vec4 u_selfRotation;
 varying vec3 v_viewPosition;
+varying vec3 v_worldPosition;
 varying vec3 v_viewNormal;
 varying vec3 v_smoothViewNormal;
 varying float v_ao;
@@ -30,12 +32,13 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   vec3 worldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+  v_worldPosition = worldPosition;
   vec4 invertedQuat = vec4(-u_selfRotation.xyz, u_selfRotation.w);
-  vec3 L = (u_lightPosition - worldPosition) / u_selfPositionRadius.w;
+  vec3 L = (u_lightPosition - worldPosition) / max(u_selfPositionRadius.w, 0.001);
   L = normalize(qrotate(L, invertedQuat));
   vec3 dao = mix(daoN, daoP, sign(L) * 0.5 + 0.5);
   vec3 absDir = abs(L);
-  float selfShadow = dot(absDir, dao) / (absDir.x + absDir.y + absDir.z);
+  float selfShadow = dot(absDir, dao) / max(absDir.x + absDir.y + absDir.z, 1e-4);
   selfShadow = min(pow(selfShadow * 3.0, 0.3) * 1.45, 1.0);
   v_viewNormal = normalMatrix * normal;
   v_smoothViewNormal = normalMatrix * SN;
@@ -50,6 +53,7 @@ const balloonFrag = /* glsl */ `
 varying vec3 v_viewNormal;
 varying vec3 v_smoothViewNormal;
 varying vec3 v_viewPosition;
+varying vec3 v_worldPosition;
 varying float v_ao;
 varying float v_thickness;
 varying float v_selfShadow;
@@ -57,35 +61,82 @@ uniform float u_roughness;
 uniform vec3 u_bgColor;
 uniform vec3 u_color;
 uniform sampler2D u_matcap;
+uniform vec3 u_lightPosition;
+uniform vec4 u_nearPositionRadiusList[${NEIGHBOUR_COUNT}];
+uniform vec3 u_nearColorList[${NEIGHBOUR_COUNT}];
 
-vec3 filmicToneMapping(vec3 x) {
-  x *= 0.85;
-  return (x * (6.2 * x + 0.5)) / (x * (6.2 * x + 1.7) + 0.06);
+#ifndef saturate
+#define saturate(a) clamp(a, 0.0, 1.0)
+#endif
+
+vec3 filmicToneMapping(vec3 color) {
+  color = max(vec3(0.0), color - vec3(0.004));
+  color = (color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06);
+  return color;
 }
 
 void main() {
   float roughness = u_roughness;
-  float ao = mix(0.55, 1.0, v_ao);
+  vec3 viewNormal = normalize(v_viewNormal);
+  vec3 N = normalize((vec4(viewNormal, 0.0) * viewMatrix).xyz);
+  vec3 V = normalize(cameraPosition - v_worldPosition);
+  vec3 worldToLight = normalize(u_lightPosition - v_worldPosition);
+  vec3 reflectView = reflect(-V, N);
+
+  vec3 gi = vec3(0.0);
+  vec4 reflections = vec4(0.0, 0.0, 0.0, 100.0);
+  float ao = 1.0;
   float shadow = 1.0;
+
+  for (int i = 0; i < ${NEIGHBOUR_COUNT}; i++) {
+    vec4 near = u_nearPositionRadiusList[i];
+    vec3 nearColor = u_nearColorList[i];
+    vec3 toNear = near.xyz - v_worldPosition;
+    float dist = length(toNear);
+    float rSum = near.w + 0.15;
+    float soft = saturate(1.0 - dist / (rSum * 3.5));
+    float _ao = 1.0 - soft * soft * 0.55;
+    ao *= _ao;
+    shadow *= mix(1.0, 0.72, soft * saturate(dot(normalize(toNear), worldToLight)));
+    gi += nearColor * 3.0 * min(1.0, (1.0 - _ao * _ao) / 0.7);
+
+    // fake reflection: sphere hit along reflect ray
+    vec3 oc = v_worldPosition - near.xyz;
+    float b = dot(oc, reflectView);
+    float c = dot(oc, oc) - near.w * near.w * 0.85;
+    float h = b * b - c;
+    if (h > 0.0) {
+      float t = -b - sqrt(h);
+      if (t > 0.0001 && t < reflections.w) {
+        reflections = vec4(nearColor, t);
+      }
+    }
+  }
+  reflections.rgb *= 1.0 / ((0.2 + roughness * 0.8) * reflections.w * 10.0 + 4.0);
+  reflections.rgb *= ao * mix(0.55, 1.0, v_ao);
+  gi /= float(${NEIGHBOUR_COUNT});
+
   vec3 albedo = u_color;
   vec3 viewDir = normalize(v_viewPosition);
-  vec3 viewNormal = normalize(v_viewNormal);
-  vec3 smoothViewNormal = normalize(v_smoothViewNormal);
   vec3 x = normalize(vec3(viewDir.z, 0.0, -viewDir.x));
   vec3 y = cross(viewDir, x);
   vec2 uvPerturbed = vec2(dot(x, viewNormal), dot(y, viewNormal)) * 0.5 + 0.5;
   vec3 matcapMap = texture2D(u_matcap, uvPerturbed).rgb;
-  vec3 matcapDiff = vec3(matcapMap.r);
+  vec3 matcapDiff = vec3(0.25 + 0.75 * matcapMap.r);
   vec3 matcapSpec = vec3(roughness > 0.5 ? matcapMap.g : matcapMap.b);
-  matcapDiff = 0.25 + 0.75 * matcapDiff;
+
+  reflections.rgb *= 0.75 + 0.25 * shadow * v_selfShadow;
   shadow = 0.6 + 0.4 * shadow;
+
   vec3 color = albedo * matcapDiff + matcapSpec;
-  color *= ao;
+  color += reflections.rgb;
+  color *= mix(0.55, 1.0, v_ao) * ao;
+  color += gi * 0.35;
   color *= v_selfShadow;
   color *= shadow;
-  // soft fill from bg so dark crosses don't go pure black
-  color += u_bgColor * 0.04 * (1.0 - matcapDiff);
-  gl_FragColor.rgb = filmicToneMapping(pow(color, vec3(2.2)));
+  color += u_bgColor * 0.03 * (1.0 - matcapDiff);
+
+  gl_FragColor.rgb = filmicToneMapping(pow(max(color, vec3(0.0)), vec3(2.2)));
   gl_FragColor.a = 1.0;
 }
 `
@@ -106,9 +157,10 @@ varying vec2 v_uv;
 void main() {
   vec2 q = v_uv - 0.5;
   q.x *= u_aspect;
-  float dst = length(q);
-  dst = smoothstep(0.0, 1.0, dst);
-  vec3 color = mix(u_color0, u_color1, 0.925 + 0.075 * dst);
+  float dst = smoothstep(0.0, 1.15, length(q));
+  vec3 color = mix(u_color0, u_color1, 0.88 + 0.12 * dst);
+  // keep mostly dark like Lusion, with a tint of the accent
+  color = mix(u_color1, color, 0.35);
   gl_FragColor = vec4(color, 1.0);
 }
 `
@@ -152,6 +204,11 @@ function seeded(seed) {
   }
 }
 
+function fit(v, a, b, c, d) {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a || 1)))
+  return c + (d - c) * t
+}
+
 class Body {
   constructor(radius, density, friction, restitution, seedRand, isGlass = false) {
     this.position = new THREE.Vector3(
@@ -160,7 +217,6 @@ class Body {
       isGlass ? 7 + seedRand() : (seedRand() - 0.5) * 6
     )
     this.velocity = this.position.clone().multiplyScalar(-2)
-    this.angularVelocity = new THREE.Vector3()
     this.quaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(seedRand() * Math.PI, seedRand() * Math.PI, seedRand() * Math.PI)
     )
@@ -203,7 +259,7 @@ export async function createBalloonsHero(canvas, visualEl) {
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(25, 1, 0.1, 100)
-  camera.position.set(0, 0, 28)
+  camera.position.set(0, 0, 25)
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -228,6 +284,7 @@ export async function createBalloonsHero(canvas, visualEl) {
   ])
   matcap.minFilter = THREE.LinearFilter
   matcap.magFilter = THREE.LinearFilter
+  matcap.generateMipmaps = false
   matcap.colorSpace = THREE.NoColorSpace
 
   const lightPosition = new THREE.Vector3(10, 10, 5)
@@ -236,9 +293,13 @@ export async function createBalloonsHero(canvas, visualEl) {
   const bodies = []
   const meshes = []
   const materials = []
+  const sorted = []
 
-  const makeMat = (cfg) => {
-    const mat = new THREE.ShaderMaterial({
+  const emptyNearPos = Array.from({ length: NEIGHBOUR_COUNT }, () => new THREE.Vector4(0, 0, -999, 0.01))
+  const emptyNearCol = Array.from({ length: NEIGHBOUR_COUNT }, () => new THREE.Color(0x111111))
+
+  const makeMat = (cfg) =>
+    new THREE.ShaderMaterial({
       uniforms: {
         u_matcap: { value: matcap },
         u_color: { value: new THREE.Color(cfg.color) },
@@ -247,21 +308,23 @@ export async function createBalloonsHero(canvas, visualEl) {
         u_lightPosition: { value: lightPosition },
         u_selfPositionRadius: { value: new THREE.Vector4(0, 0, 0, 1) },
         u_selfRotation: { value: new THREE.Vector4(0, 0, 0, 1) },
+        u_nearPositionRadiusList: { value: emptyNearPos.map((v) => v.clone()) },
+        u_nearColorList: { value: emptyNearCol.map((c) => c.clone()) },
       },
       vertexShader: balloonVert,
       fragmentShader: balloonFrag,
     })
-    return mat
-  }
 
   for (const cfg of sphereData) {
     const mat = makeMat(cfg)
     const mesh = new THREE.Mesh(geometry, mat)
     mesh.frustumCulled = false
+    mesh.scale.setScalar(cfg.radius)
     scene.add(mesh)
     meshes.push(mesh)
     materials.push(mat)
     bodies.push(new Body(cfg.radius, cfg.density, cfg.friction, cfg.restitution, rand, false))
+    sorted.push({ i: meshes.length - 1, d2: 0 })
   }
 
   const bgMat = new THREE.ShaderMaterial({
@@ -274,8 +337,8 @@ export async function createBalloonsHero(canvas, visualEl) {
     fragmentShader: bgFrag,
     depthWrite: false,
   })
-  const bg = new THREE.Mesh(new THREE.PlaneGeometry(80, 50), bgMat)
-  bg.position.z = -10
+  const bg = new THREE.Mesh(new THREE.PlaneGeometry(90, 60), bgMat)
+  bg.position.z = -12
   bg.renderOrder = -1000
   scene.add(bg)
 
@@ -323,16 +386,20 @@ export async function createBalloonsHero(canvas, visualEl) {
     const el = visualEl || canvas.parentElement
     const w = el.clientWidth
     const h = el.clientHeight
-    camera.aspect = w / Math.max(h, 1)
+    const aspect = w / Math.max(h, 1)
+    // Lusion: fit(aspect, 2.2, 2/3, 18, 30)
+    camera.fov = fit(aspect, 2.2, 2 / 3, 18, 30)
+    camera.aspect = aspect
     camera.updateProjectionMatrix()
     renderer.setSize(w, h, false)
-    bgMat.uniforms.u_aspect.value = w / Math.max(h, 1)
+    bgMat.uniforms.u_aspect.value = aspect
   }
   resize()
   window.addEventListener('resize', resize)
 
   let raf = 0
   let last = performance.now()
+  const start = performance.now()
 
   const tick = (now) => {
     raf = requestAnimationFrame(tick)
@@ -340,6 +407,11 @@ export async function createBalloonsHero(canvas, visualEl) {
     last = now
     const steps = isMobile ? 1 : 2
     dt /= steps
+
+    // Lusion intro: camera z 25 → 17.5
+    const t = (now - start) / 1000
+    const camZ = fit(t, 0.3, 2.0, 25, 17.5)
+    camera.position.z = camZ
 
     for (let s = 0; s < steps; s++) {
       const v = new THREE.Vector3(mouse.x, mouse.y, 0.5).unproject(camera)
@@ -386,7 +458,6 @@ export async function createBalloonsHero(canvas, visualEl) {
           }
         }
 
-        // mouse cylinder push (Lusion-style)
         _v0.copy(_pos).sub(camera.position)
         let c = _v0.dot(mouseBA) / n
         c = _v0.sub(_v1.copy(mouseBA).multiplyScalar(c)).length() - A.radius - MOUSE_RADIUS
@@ -399,7 +470,6 @@ export async function createBalloonsHero(canvas, visualEl) {
           _vel.add(mousePush)
         }
 
-        // soft swirl
         let u = _pos.length()
         if (u > 0) {
           _v0.set(1, 1, 1).normalize()
@@ -411,7 +481,6 @@ export async function createBalloonsHero(canvas, visualEl) {
           _vel.add(_v1)
         }
 
-        // angular from linear
         _v0.crossVectors(_pos, _vel)
         let f = _v0.length()
         f /= A.inertia
@@ -425,9 +494,8 @@ export async function createBalloonsHero(canvas, visualEl) {
         A.velocity.copy(_vel)
         A.update(dt)
 
-        // soft bounds so they stay in frame
         ;['x', 'y', 'z'].forEach((axis) => {
-          const lim = axis === 'z' ? 6 : 9
+          const lim = axis === 'z' ? 5.5 : 7.5
           if (A.position[axis] > lim) {
             A.position[axis] = lim
             A.velocity[axis] *= -0.55
@@ -451,8 +519,25 @@ export async function createBalloonsHero(canvas, visualEl) {
       u.u_bgColor.value.copy(bgMat.uniforms.u_color1.value)
     }
 
-    camera.position.x += (mouse.x * 1.15 - camera.position.x) * 0.045
-    camera.position.y += (mouse.y * 0.75 - camera.position.y) * 0.045
+    // nearest-neighbour fill for AO / bounce / reflections
+    for (let i = 0; i < meshes.length; i++) {
+      for (let j = 0; j < meshes.length; j++) {
+        sorted[j].i = j
+        sorted[j].d2 = i === j ? 0 : bodies[i].position.distanceToSquared(bodies[j].position)
+      }
+      sorted.sort((a, b) => a.d2 - b.d2)
+      const nearPos = materials[i].uniforms.u_nearPositionRadiusList.value
+      const nearCol = materials[i].uniforms.u_nearColorList.value
+      for (let k = 0; k < NEIGHBOUR_COUNT; k++) {
+        const idx = sorted[k + 1] ? sorted[k + 1].i : sorted[0].i
+        const b = bodies[idx]
+        nearPos[k].set(b.position.x, b.position.y, b.position.z, b.radius)
+        nearCol[k].copy(materials[idx].uniforms.u_color.value)
+      }
+    }
+
+    camera.position.x += (mouse.x * 0.9 - camera.position.x) * 0.04
+    camera.position.y += (mouse.y * 0.55 - camera.position.y) * 0.04
     camera.lookAt(0, 0, 0)
 
     renderer.render(scene, camera)
