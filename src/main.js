@@ -46,8 +46,9 @@ if (heroTitle) {
   heroTitle.textContent = ''
   words.forEach((word, i) => {
     const span = document.createElement('span')
-    span.textContent = word + (i < words.length - 1 ? ' ' : '')
+    span.textContent = word
     span.style.display = 'inline-block'
+    span.style.marginRight = '0.28em'
     span.style.transitionDelay = `${i * 40}ms`
     heroTitle.appendChild(span)
   })
