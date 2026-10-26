@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zyrax — Award Inspired 3D & Interactive Studio · Kian Zarandi</title>
+  <meta name="description" content="Kian Zarandi / Zyrax — 3D visual storytelling, interactive web experiences, Solidity, Rust, and product craft." />
+  <meta property="og:title" content="Zyrax — Kian Zarandi" />
+  <meta property="og:description" content="3D visual storytelling and interactive web experiences." />
+  <meta property="og:url" content="https://kianpk.github.io/zyrax-studio/" />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="logo" href="#top">ZYRAX</a>
+    <div class="header-right">
+      <button class="icon-btn" type="button" aria-label="Minimize" data-sound-toggle>
+        <span class="icon-line"></span>
+      </button>
+      <a class="pill-btn" href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">LET'S TALK<span class="dot"></span></a>
+      <button class="menu-label" type="button" data-menu-open>MENU</button>
+    </div>
+  </header>
+
+  <nav class="menu-overlay" data-menu hidden>
+    <button class="menu-close" type="button" data-menu-close aria-label="Close">×</button>
+    <div class="menu-inner">
+      <a href="#work" data-menu-close>Work</a>
+      <a href="#approach" data-menu-close>Approach</a>
+      <a href="#contact" data-menu-close>Contact</a>
+      <a href="https://github.com/kianPk" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://www.zyrax.ir" target="_blank" rel="noreferrer">zyrax.ir</a>
+    </div>
+  </nav>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero section">
+      <div class="hero-copy">
+        <h1 class="hero-title" data-split>
+          We create 3D visual storytelling and interactive web experiences that help brands stand out
+        </h1>
+      </div>
+      <div class="hero-stage">
+        <canvas id="hero-canvas"></canvas>
+      </div>
+      <div class="hero-scroll">
+        <span class="cross">+</span>
+        <span class="label">SCROLL TO EXPLORE</span>
+        <span class="cross">+</span>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="about section" id="about">
+      <div class="about-grid">
+        <div class="about-left">
+          <h2 class="display" data-reveal>Bold Ideas,<br />Brought to Life</h2>
+          <div class="paint-stroke" aria-hidden="true"></div>
+          <div class="about-visual">
+            <div class="glass-orb"></div>
+          </div>
+        </div>
+        <div class="about-right">
+          <p class="lead" data-reveal>
+            My name is <strong>Kian Zarandi</strong> (<strong>@kianPk</strong>). I combine design, motion, 3D, and development —
+            plus Solidity protocols, Rust services, and Go gateways — to create digital experiences that feel visually striking and technically seamless.
+          </p>
+          <a class="outline-pill" href="#approach">OUR APPROACH</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- REEL -->
+    <section class="reel section">
+      <div class="reel-frame">
+        <div class="reel-bg"></div>
+        <button class="reel-play" type="button" data-reel>
+          <span>PLAY</span>
+          <span class="play-circle" aria-hidden="true">▶</span>
+          <span>REEL</span>
+        </button>
+        <div class="reel-crosses" aria-hidden="true">
+          <span>+</span><span>+</span><span>+</span><span>+</span><span>+</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- WORK -->
+    <section class="work section" id="work">
+      <div class="work-head">
+        <h2 class="work-title">Featured Work</h2>
+        <p class="work-desc">A SELECTION OF IMMERSIVE DIGITAL EXPERIENCES AND PROTOCOL CRAFT CREATED FOR AMBITIOUS PRODUCTS AND FORWARD THINKING TEAMS.</p>
+      </div>
+      <div class="work-grid" id="work-grid"></div>
+      <div class="work-cta">
+        <a class="outline-pill" href="https://github.com/kianPk" target="_blank" rel="noreferrer">SEE ALL PROJECTS</a>
+      </div>
+    </section>
+
+    <!-- APPROACH -->
+    <section class="approach section" id="approach">
+      <h2 class="display xl" data-reveal>Where Creative Ideas Become Immersive Experiences</h2>
+      <div class="approach-grid">
+        <div class="approach-card">
+          <div class="approach-scene" id="mini-canvas-wrap">
+            <canvas id="mini-canvas"></canvas>
+          </div>
+        </div>
+        <div class="approach-copy">
+          <p data-reveal>
+            I do not chase trends or produce work that looks like everyone else. I focus on creating visually distinctive digital experiences that reflect your brand, engage your audience, and make people remember what they saw.
+          </p>
+          <p data-reveal>
+            The process blends creative direction, 3D craft, and interactive development with production-grade engineering — Foundry, Rust, Go, Vue, and Three.js — to build tailored digital journeys that feel original, polished, and built for impact.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- END CTA -->
+    <section class="end section" id="contact">
+      <div class="end-stickers" aria-hidden="true">
+        <span class="sticker s1">⚡</span>
+        <span class="sticker s2">✦</span>
+        <span class="sticker s3">◈</span>
+        <span class="sticker s4">◉</span>
+        <span class="sticker s5">▲</span>
+        <span class="sticker s6">◆</span>
+      </div>
+      <p class="end-kicker">IS YOUR BIG IDEA READY TO GO WILD?</p>
+      <a class="end-title" href="mailto:kianzarandi701@gmail.com">Let's work together!</a>
+      <a class="pill-btn light" href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">↓ CONTINUE ON TELEGRAM ↓</a>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="site-footer">
+      <div class="footer-top">
+        <div class="footer-col">
+          <p>Kian Zarandi</p>
+          <p>@kianPk</p>
+          <p>Tehran · Remote</p>
+          <p>Iran / Worldwide</p>
+        </div>
+        <div class="footer-col">
+          <a href="https://github.com/kianPk" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">Telegram</a>
+          <a href="https://www.zyrax.ir" target="_blank" rel="noreferrer">Web</a>
+        </div>
+        <div class="footer-col grow">
+          <h3>Subscribe to updates</h3>
+          <form class="news" action="mailto:kianzarandi701@gmail.com" method="get">
+            <input type="email" name="subject" placeholder="Your email" required />
+            <button type="submit" aria-label="Subscribe">→</button>
+          </form>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div>
+          <p>General · <a href="mailto:kianzarandi701@gmail.com">kianzarandi701@gmail.com</a></p>
+          <p>Labs · <a href="https://kianpk.github.io/zyrax-drive/" target="_blank" rel="noreferrer">Zyrax Drive</a></p>
+        </div>
+        <p class="credit">Built by Kian with ♥ · inspired by Lusion.co layout</p>
+        <button class="to-top" type="button" data-top aria-label="Back to top">↑</button>
+      </div>
+    </footer>
+  </main>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
