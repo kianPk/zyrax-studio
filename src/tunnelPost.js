@@ -379,28 +379,26 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
         : 1
 
     if (isWhiteTunnelActive) {
-      // fit whiteFrame 0..05 → 4..2, or wait → bloom
-      // Delay wait bloom vs Lusion's 0..0.1 so wave + face LED read before silhouette washout
-      // Mobile: lower peak so stickers/wave silhouette stay readable
-      const waitBloomPeak = isMobile ? 8 : 20
-      const whiteBloomPeak = isMobile ? 2.6 : 4
-      const waitBloomT = THREE.MathUtils.clamp(
-        (whiteTunnelWaitRatio - 0.08) / 0.22,
-        0,
-        1
-      )
+      // Exact Lusion GoalTunnels.syncProperties white bloom:
+      // fit(whiteFrameRatio, 0, .05, 4, 2) → settles at 2 so cobalt crevices stay readable
+      // wait: fit(whiteTunnelWaitRatio, 0, .1, 0, 20); clearAlpha fit(0..0.1, 0.3→0)
+      const waitBloomPeak = isMobile ? 10 : 20
       bloomAmount =
         astronautDropRatio < 1
           ? THREE.MathUtils.lerp(
-              whiteBloomPeak,
+              4,
               2,
               THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1)
             )
-          : THREE.MathUtils.lerp(0, waitBloomPeak, waitBloomT)
+          : THREE.MathUtils.lerp(
+              0,
+              waitBloomPeak,
+              THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
+            )
       clearAlpha = THREE.MathUtils.lerp(
         0.3,
         0,
-        THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.18, 0, 1)
+        THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
       )
     } else {
       // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel

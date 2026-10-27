@@ -256,8 +256,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   envMap.generateMipmaps = false
   envMap.minFilter = THREE.LinearFilter
   envMap.magFilter = THREE.LinearFilter
-  blockTex.colorSpace = THREE.SRGBColorSpace
+  // Lusion samples white_block as raw bytes (shade.r drives blue×albedo).
+  // sRGB decode flattens midtones and kills cobalt crevices.
+  blockTex.colorSpace = THREE.NoColorSpace
   blockTex.wrapS = blockTex.wrapT = THREE.RepeatWrapping
+  blockTex.generateMipmaps = false
+  blockTex.minFilter = THREE.LinearFilter
+  blockTex.magFilter = THREE.LinearFilter
 
   // animation data textures
   const posArr = animGeo.attributes.position.array
@@ -588,6 +593,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     for (let i = 0; i < BLOCK_COUNT; i++) ids[i] = i
     ig.setAttribute('a_instanceId', new THREE.InstancedBufferAttribute(ids, 1))
     ig.instanceCount = BLOCK_COUNT
+    // Lusion GoalWhiteTunnel: opaque ShaderMaterial (alpha still written for bloom mask).
+    // transparent:true blends overlapping instances and washes cobalt→lavender.
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         u_texture: { value: blockTex },
@@ -598,7 +605,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       },
       vertexShader: whiteTunnelVert,
       fragmentShader: whiteTunnelFrag,
-      transparent: true,
+      transparent: false,
+      depthWrite: true,
+      depthTest: true,
       extensions: { derivatives: true },
       defines: { BLOCK_COUNT, ...(isWall ? { IS_WALL: true } : {}) },
     })
@@ -978,6 +987,17 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     renderer.setClearColor(bg, post.clearAlpha)
     sharedUniforms.u_bgColor.value.copy(bg)
     if (stickyEl) stickyEl.style.background = bg.getStyle()
+    // Keep page chrome from peeking as black gutters during white phase
+    if (isWhiteTunnelActive && astronautDropRatio < 1) {
+      document.documentElement.style.background = '#ffffff'
+      document.body.style.background = '#ffffff'
+    } else if (isBlackTunnelActive || isBlackTitleActive) {
+      document.documentElement.style.background = '#000000'
+      document.body.style.background = '#000000'
+    } else {
+      document.documentElement.style.background = ''
+      document.body.style.background = ''
+    }
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
 
@@ -1071,8 +1091,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     baseCameraFov = (Math.atan(l / 2 / dist) * 2) / Math.PI * 180
 
     if (isWhiteTunnelActive) {
+      // Lusion GoalWhiteTunnel: only dolly-zoom offset — FOV comes from frameHeight mix above
       cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, isMobile ? 36 : 60, 0)
-      baseCameraFov = fit(whiteFrameRatio, 0, 1, baseCameraFov, isMobile ? 58 : 70)
     } else if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *

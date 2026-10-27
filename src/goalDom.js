@@ -63,7 +63,11 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
 
   // Spacer keeps layout height when sticky is position:fixed
   let pinSpacer = null
+  let stickyHomeParent = null
+  let stickyHomeNext = null
   if (stickyEl && stickyEl.parentElement) {
+    stickyHomeParent = stickyEl.parentElement
+    stickyHomeNext = stickyEl.nextSibling
     pinSpacer = document.createElement('div')
     pinSpacer.setAttribute('aria-hidden', 'true')
     pinSpacer.style.width = '100%'
@@ -89,11 +93,28 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       const slotEl = stickyEl.classList.contains('is-pinned') && pinSpacer ? pinSpacer : stickyEl
       const slotTop = slotEl.getBoundingClientRect().top + scrollY
       const shouldPin = scrollY >= slotTop - 1 && sectionRect.bottom > vh
+      const wasPinned = stickyEl.classList.contains('is-pinned')
       stickyEl.classList.toggle('is-pinned', shouldPin)
       if (pinSpacer) {
-        pinSpacer.style.height = shouldPin ? `${stickyEl.offsetHeight || vh}px` : '0px'
+        pinSpacer.style.height = shouldPin ? `${vh}px` : '0px'
       }
-      stickyEl.style.background = toWhite > 0.5 ? '#f0f1fa' : '#000000'
+      // Reparent to body while pinned so Lenis/transform ancestors can't letterbox
+      if (shouldPin && !wasPinned) {
+        document.body.appendChild(stickyEl)
+        window.dispatchEvent(new Event('resize'))
+      } else if (!shouldPin && wasPinned && stickyHomeParent) {
+        if (stickyHomeNext && stickyHomeNext.parentNode === stickyHomeParent) {
+          stickyHomeParent.insertBefore(stickyEl, stickyHomeNext)
+        } else if (pinSpacer && pinSpacer.parentNode === stickyHomeParent) {
+          stickyHomeParent.insertBefore(stickyEl, pinSpacer.nextSibling)
+        } else {
+          stickyHomeParent.appendChild(stickyEl)
+        }
+        window.dispatchEvent(new Event('resize'))
+      }
+      // Match tunnel clear: black title/tunnel → black; white tunnel → white (not page grey)
+      stickyEl.style.background =
+        toWhite > 0.05 || whiteTunnelRatio > 0.01 ? '#ffffff' : '#000000'
     }
 
     // Lusion: map blackTitle through RATIO_FROM..RATIO_TO

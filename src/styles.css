@@ -1101,10 +1101,16 @@ button {
   z-index: 1;
 }
 #home-goal-tunnel-sticky.is-pinned {
+  /* Full-bleed to viewport — avoids black L/R gutters from transformed ancestors */
   position: fixed;
   left: 0;
-  right: 0;
   top: 0;
+  right: auto;
+  bottom: auto;
+  width: 100vw;
+  height: calc(var(--vh, 1vh) * 100);
+  max-width: 100vw;
+  margin: 0;
   z-index: 4;
 }
 #goal-tunnel-canvas {
