@@ -983,9 +983,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
     // Lusion GoalTunnelEfx: accumulate container.z + offsetZ deltas
     const containerZ = -80 * cUnMix(0.2, 0, blackTunnelRatio)
-    efxDeltaZ = 0
-    efxDeltaZ += containerZ - prevBlackContainerZ
-    efxDeltaZ += offsetZ - prevBlackOffsetZ
+    let dContainer = containerZ - prevBlackContainerZ
+    let dOffset = offsetZ - prevBlackOffsetZ
+    // Ignore teleport jumps (puppeteer / Lenis seek) so blur doesn't explode
+    if (Math.abs(dOffset) > 8 || Math.abs(dContainer) > 20) {
+      dOffset = 0
+      dContainer = 0
+    }
+    efxDeltaZ = dContainer + dOffset
     prevBlackContainerZ = containerZ
     prevBlackOffsetZ = offsetZ
     blackTunnelGroup.position.z = containerZ
