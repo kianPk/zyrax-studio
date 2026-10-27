@@ -21,6 +21,8 @@ import {
   astronautBlackFrag,
 } from './tunnelShaders.js'
 import { createTunnelPost } from './tunnelPost.js'
+import { BrownianMotion, SecondOrderDynamics } from './lusionMotion.js'
+import { easeSineInOut } from './scrollMath.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
@@ -574,20 +576,52 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let blackLinearTime = 0
   let cameraDollyZoomFovOffset = 0
   let baseCameraFov = EXPECTED_FOV
-  // Brownian-ish motion state (Lusion astronaut shake)
-  const motionPos = new THREE.Vector3()
-  const shakeTarget = new THREE.Vector3()
-  const motionEuler = new THREE.Euler()
-  const motionQ = new THREE.Quaternion()
+  // Exact Lusion BrownianMotion + SecondOrderDynamics for hero + clones
+  const heroMotion = new BrownianMotion()
+  heroMotion.positionFrequency = 0.2
+  heroMotion.rotationFrequency = 0.15
+  heroMotion.positionAmplitude = 0
+  heroMotion.rotationAmplitude = 0
+  const heroPosDyn = new SecondOrderDynamics(new THREE.Vector3(), 1, 0.65, 1.3)
+  const heroRotDyn = new SecondOrderDynamics(new THREE.Vector3(), 1, 0.85, 1.1)
+  const cloneMotions = Array.from({ length: CLONE_COUNT }, () => {
+    const m = new BrownianMotion()
+    m.positionFrequency = 0.2
+    m.rotationFrequency = 0.6
+    m.positionAmplitude = 12
+    m.rotationAmplitude = 10
+    return m
+  })
+  const cloneTimeShifts = Float32Array.from({ length: CLONE_COUNT }, () => Math.random() * 2)
+  const basePathPos = new THREE.Vector3()
+  const basePathQuat = new THREE.Quaternion()
+  const heroMatrix = new THREE.Matrix4()
+  const motionMatrix = new THREE.Matrix4()
+  const tmpV = new THREE.Vector3()
+  const tmpV2 = new THREE.Vector3()
   const tmpQ = new THREE.Quaternion()
+  const tmpEuler = new THREE.Euler()
+  const oneScale = new THREE.Vector3(1, 1, 1)
   const colorA = new THREE.Color()
   const colorB = new THREE.Color()
   const camForward = new THREE.Vector3()
   const camTmp = new THREE.Vector3()
-  const cloneEuler = new THREE.Euler()
-  const cloneQuat = new THREE.Quaternion()
+  // mouse look (Lusion CameraControls)
+  let mouseX = 0
+  let mouseY = 0
+  let cameraLookX = 0
+  let cameraLookY = 0
+  let cameraLookStrength = 0.08
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      mouseX = (e.clientX / Math.max(window.innerWidth, 1)) * 2 - 1
+      mouseY = (e.clientY / Math.max(window.innerHeight, 1)) * 2 - 1
+    },
+    { passive: true }
+  )
 
-  /** Port of Lusion CameraControls dolly-zoom (FOV stays base; distance shifts). */
+  /** Port of Lusion CameraControls: dolly-zoom + mouse look. */
   const applyCamera = () => {
     camera.near = 1
     camera.far = 200
@@ -599,7 +633,6 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     let cameraDistance = camTmp.copy(DEFAULT_LOOK).sub(camera.position).dot(camForward)
     const baseFov = camera.fov
     const tempFov = baseFov + cameraDollyZoomFovOffset
-    // avoid div0 / extreme
     const safeTemp = Math.max(1, Math.min(170, tempFov))
     let n =
       (cameraDistance * Math.tan(((baseFov / 360) * Math.PI) / 2)) /
@@ -609,10 +642,68 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     camera.translateZ(n)
     camera.fov = baseFov
     cameraDistance += n
-    // Lusion desktop path: translate to look point, then back out by distance
+    // Desktop: pull to look point, apply mouse look, push back (Lusion CameraControls)
     camera.translateZ(cameraDistance * -1)
+    const lookTargetX = Math.max(-1, Math.min(1, mouseY)) * cameraLookStrength
+    const lookTargetY = Math.max(-1, Math.min(1, -mouseX)) * cameraLookStrength
+    cameraLookX += (lookTargetX - cameraLookX) * 0.1
+    cameraLookY += (lookTargetY - cameraLookY) * 0.1
+    tmpEuler.set(cameraLookX, cameraLookY, 0)
+    tmpQ.setFromEuler(tmpEuler)
+    camera.quaternion.multiply(tmpQ)
     camera.translateZ(cameraDistance)
     camera.updateProjectionMatrix()
+  }
+
+  /** Lusion updateTransforms — BrownianMotion + SecondOrderDynamics each frame. */
+  const updateAstronautTransforms = (dt) => {
+    heroMotion.update(dt)
+    heroPosDyn.update(dt, heroMotion.position)
+    tmpV.copy(heroMotion.euler)
+    heroRotDyn.update(dt, tmpV)
+    tmpEuler.set(heroRotDyn.value.x, heroRotDyn.value.y, heroRotDyn.value.z)
+    tmpQ.setFromEuler(tmpEuler)
+    motionMatrix.compose(heroPosDyn.value, tmpQ, oneScale)
+    heroMatrix.compose(basePathPos, basePathQuat, oneScale)
+    heroMatrix.multiply(motionMatrix)
+    heroMatrix.decompose(tmpV, tmpQ, tmpV2)
+    instancePos.setXYZ(0, tmpV.x, tmpV.y, tmpV.z)
+    instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
+    instancePos.needsUpdate = true
+    instanceOrient.needsUpdate = true
+
+    deltaTimeMultiplier =
+      1 +
+      Math.min(
+        3.5,
+        heroPosDyn.valueVel.length() * 0.2 + heroRotDyn.valueVel.length() * 0.2
+      )
+
+    // Clones — Lusion Brownian ghosts during black tunnel only
+    if (clonesShowRatio > 0.01 && !isWhiteTunnelActive) {
+      for (let i = 0; i < CLONE_COUNT; i++) {
+        const m = cloneMotions[i]
+        m.positionFrequency = 0.2
+        m.rotationFrequency = 0.6
+        m.positionAmplitude = 12
+        m.rotationAmplitude = 10
+        m.update(dt)
+        // start from hero base pose then apply clone brownian
+        heroMatrix.compose(basePathPos, basePathQuat, oneScale)
+        motionMatrix.copy(m.matrix)
+        heroMatrix.multiply(motionMatrix)
+        heroMatrix.decompose(tmpV, tmpQ, tmpV2)
+        // lerp toward hero as clonesShowRatio fades each clone out
+        const t = i / Math.max(CLONE_COUNT - 1, 1)
+        const fade = fit(clonesShowRatio, t * 0.3, 0.7 + t * 0.3, 1, 0, easeSineInOut)
+        tmpV2.set(instancePos.getX(0), instancePos.getY(0), instancePos.getZ(0))
+        tmpV.lerp(tmpV2, fade)
+        clonePos.setXYZ(i, tmpV.x, tmpV.y, tmpV.z)
+        cloneOrient.setXYZW(i, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
+      }
+      clonePos.needsUpdate = true
+      cloneOrient.needsUpdate = true
+    }
   }
 
   const stickyEl = canvas.parentElement || sectionEl
@@ -742,7 +833,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cmesh.visible = !isWhiteTunnelActive && clonesShowRatio > 0.01
     }
 
-    // Path: Lusion updateTransforms
+    // Path base (Brownian applied per-tick with dt — Lusion updateTransforms)
     let path
     if (isWhiteTunnelActive) {
       const frame =
@@ -754,93 +845,33 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     } else {
       path = samplePath(inAnim, easeCubicIn(Math.min(blackTitleRatio, 1)))
     }
+    basePathPos.copy(path.p)
+    basePathQuat.copy(path.q)
 
-    // Lusion BrownianMotion (+ soft damp to mimic SecondOrderDynamics)
-    let posAmp = 0
-    let rotAmp = 0
-    let posFreq = 0.2
-    let rotFreq = 0.15
+    // Motion amplitudes — exact Lusion GoalTunnelAstronauts.updateTransforms
+    heroMotion.positionFrequency = 0.2
+    heroMotion.rotationFrequency = 0.15
+    heroMotion.positionAmplitude = 0
+    heroMotion.rotationAmplitude = 0
     if (isBlackTunnelActive) {
       const I = blackTunnelRatio
-      posFreq = 0.2 + 0.5 * I
-      rotFreq = 0.15
-      posAmp = 5 * I
-      rotAmp = 60 * I
+      heroMotion.positionFrequency = 0.2 + 0.5 * I
+      heroMotion.rotationFrequency = 0.15
+      heroMotion.positionAmplitude = 5 * I
+      heroMotion.rotationAmplitude = 60 * I
     } else if (isWhiteTunnelActive) {
-      posFreq = fit(whiteFrameRatio, 0, 0.45, 0.5, 0.2)
-      rotFreq = fit(whiteFrameRatio, 0, 0.45, 0.4, 0.15)
-      posAmp = fit(whiteFrameRatio, 0, 0.75, 5, 0)
-      rotAmp = fit(whiteFrameRatio, 0, 0.75, 15, 0)
-    }
-    shakeTarget.set(
-      Math.sin(tunnelTime * posFreq * 5.1) * posAmp * 0.08 +
-        Math.sin(tunnelTime * posFreq * 2.3) * posAmp * 0.05,
-      Math.sin(tunnelTime * posFreq * 3.7 + 1.2) * posAmp * 0.08,
-      Math.sin(tunnelTime * posFreq * 4.4 + 0.7) * posAmp * 0.06
-    )
-    // damp toward target (approx SecondOrderDynamics)
-    motionPos.lerp(shakeTarget, 0.12)
-    const targetEuler = {
-      x: (Math.sin(tunnelTime * rotFreq * 3.1) * rotAmp * Math.PI) / 180,
-      y: (Math.sin(tunnelTime * rotFreq * 2.4 + 0.8) * rotAmp * Math.PI) / 180,
-      z: (Math.sin(tunnelTime * rotFreq * 1.7 + 1.5) * rotAmp * Math.PI) / 180,
-    }
-    motionEuler.x += (targetEuler.x - motionEuler.x) * 0.1
-    motionEuler.y += (targetEuler.y - motionEuler.y) * 0.1
-    motionEuler.z += (targetEuler.z - motionEuler.z) * 0.1
-    motionQ.setFromEuler(motionEuler)
-    path.p.add(motionPos)
-    tmpQ.copy(path.q).multiply(motionQ)
-    // velocity → animation speed boost (Lusion deltaTimeMultiplier)
-    const shakeMag = Math.hypot(motionPos.x, motionPos.y, motionPos.z) +
-      Math.hypot(motionEuler.x, motionEuler.y, motionEuler.z)
-    deltaTimeMultiplier = 1 + Math.min(3.5, shakeMag * 0.35)
-
-    instancePos.setXYZ(0, path.p.x, path.p.y, path.p.z)
-    instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
-    instancePos.needsUpdate = true
-    instanceOrient.needsUpdate = true
-
-    // Clone offsets — Lusion Brownian ghosts around hero
-    if (clonesShowRatio > 0.01) {
-      for (let i = 0; i < CLONE_COUNT; i++) {
-        const t = tunnelTime * (0.7 + i * 0.17) + i * 1.7
-        const amp = 4 + clonesShowRatio * 8
-        const ox = Math.sin(t * 1.3) * amp + Math.cos(t * 0.7 + i) * amp * 0.4
-        const oy = Math.cos(t * 1.1) * amp * 0.7
-        const oz = Math.sin(t * 0.9 + i * 0.5) * amp * 0.5
-        const fade = fit(clonesShowRatio, (i / (CLONE_COUNT - 1)) * 0.3, 0.7 + (i / (CLONE_COUNT - 1)) * 0.3, 1, 0)
-        clonePos.setXYZ(
-          i,
-          path.p.x + ox * (1 - fade * 0.35),
-          path.p.y + oy * (1 - fade * 0.35),
-          path.p.z + oz * (1 - fade * 0.35)
-        )
-        cloneEuler.set(
-          motionEuler.x + Math.sin(t) * 0.4,
-          motionEuler.y + Math.cos(t * 1.2) * 0.4,
-          motionEuler.z + Math.sin(t * 0.8) * 0.3
-        )
-        cloneQuat.setFromEuler(cloneEuler).multiply(tmpQ)
-        cloneOrient.setXYZW(i, cloneQuat.x, cloneQuat.y, cloneQuat.z, cloneQuat.w)
-        cloneBlend1.setXYZ(i, blend1.getX(0), blend1.getY(0), blend1.getZ(0))
-        cloneBlend2.setXYZ(i, blend2.getX(0), blend2.getY(0), blend2.getZ(0))
-      }
-      clonePos.needsUpdate = true
-      cloneOrient.needsUpdate = true
-      cloneBlend1.needsUpdate = true
-      cloneBlend2.needsUpdate = true
+      heroMotion.positionFrequency = fit(whiteFrameRatio, 0, 0.45, 0.5, 0.2)
+      heroMotion.rotationFrequency = fit(whiteFrameRatio, 0, 0.45, 0.4, 0.15)
+      heroMotion.positionAmplitude = fit(whiteFrameRatio, 0, 0.75, 5, 0)
+      heroMotion.rotationAmplitude = fit(whiteFrameRatio, 0, 0.75, 15, 0)
     }
 
     astronautRoot.visible = showRatio > 0.02
 
-    // —— Lusion CameraControls: base FOV ~45, dolly via distance ——
-    // updateRatios: full-viewport frame → expectedFov 45
+    // —— Lusion CameraControls FOV / dolly + look strength ——
     baseCameraFov = EXPECTED_FOV
     if (isWhiteTunnelActive) {
-      // white opens with large dolly offset (FOV stays base)
       cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
-      // as white frame grows, approximate wider FOV from shrinking frameHeight
       baseCameraFov = fit(whiteFrameRatio, 0, 1, EXPECTED_FOV, 70)
     } else if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
@@ -852,6 +883,19 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cameraDollyZoomFovOffset = fit(blackFrameInRatio, 0, 1, 20, 0)
       blackTunnelGroup.position.z = -80
     }
+    // syncProperties cameraLookStrength
+    cameraLookStrength =
+      0.08 * smoothstep(0.5, 1, blackTitleRatio) + 0.02
+    if (whiteTunnelRatio > 0) {
+      cameraLookStrength *= fit(
+        ranges.between('whiteFrameBreak', 'astronautWait').ratio,
+        0.75,
+        1,
+        0,
+        0.5
+      )
+    }
+    cameraLookStrength = fit(whiteTunnelWaitRatio, 0, 0.1, cameraLookStrength, 0.05)
     applyCamera()
 
     // black astronaut uniforms (scroll-linked)
@@ -967,15 +1011,16 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
     updateBlackTunnel(dt)
     updateWhiteTunnel(dt)
+    updateAstronautTransforms(dt)
 
-    // live black-tunnel FOV pulse
+    // live black-tunnel FOV pulse + mouse look
     if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *
         7.5 *
         smoothstep(0, 0.2, blackTunnelRatio)
-      applyCamera()
     }
+    applyCamera()
 
     // bone loop — Lusion updateAnimation (exact speed curves)
     const drop = astronautDropRatio
