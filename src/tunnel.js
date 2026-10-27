@@ -993,9 +993,16 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     scene.background = null
     renderer.setClearColor(bg, post.clearAlpha)
     sharedUniforms.u_bgColor.value.copy(bg)
-    if (stickyEl) stickyEl.style.background = bg.getStyle()
-    // Keep page chrome from peeking as black gutters during white phase
-    if (isWhiteTunnelActive && astronautDropRatio < 1) {
+    if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
+      stickyEl.style.background = bg.getStyle()
+    }
+    // Page chrome: keep light grey during tablet-window phase; only force
+    // black/white once the tunnel is full-bleed (pinned / past blackFrameIn).
+    const windowed = stickyEl?.classList.contains('is-windowed')
+    if (windowed) {
+      document.documentElement.style.background = ''
+      document.body.style.background = ''
+    } else if (isWhiteTunnelActive && astronautDropRatio < 1) {
       document.documentElement.style.background = '#ffffff'
       document.body.style.background = '#ffffff'
     } else if (isBlackTunnelActive || isBlackTitleActive) {

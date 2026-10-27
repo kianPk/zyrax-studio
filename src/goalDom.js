@@ -85,8 +85,9 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     const global = ranges.progress()
     const vh = window.innerHeight
 
-    // Pin tunnel once sticky reaches viewport top (after context + cyan line)
-    if (stickyEl) {
+    // Pin tunnel once sticky reaches viewport top (after context + cyan line).
+    // Skip while goalFrame has the sticky in tablet-window mode.
+    if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
       const sectionRect = sectionEl.getBoundingClientRect()
       const scrollY = window.scrollY || 0
       // Document Y of sticky slot (spacer when pinned, else sticky itself)
@@ -144,15 +145,21 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     if (textsEl) {
       const fade = fit(blackTunnelRatio, 0.02, 0.15, 1, 0)
       textsEl.style.opacity = String(fade)
-      textsEl.style.transform = 'none'
+      // goalFrame owns vertical align during tablet-window mode
+      if (!stickyEl?.classList.contains('is-windowed')) {
+        textsEl.style.transform = 'none'
+      }
     }
 
+    const blackFrameInRatio = ranges.range('blackFrameIn').ratio
     sectionEl.dataset.goalPhase =
       whiteTunnelRatio > 0.01
         ? 'white'
         : blackTunnelRatio > 0.01
           ? 'black-tunnel'
-          : 'title'
+          : blackFrameInRatio < 0.98
+            ? 'window'
+            : 'title'
 
     return {
       blackTitleRatio,

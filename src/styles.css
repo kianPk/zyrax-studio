@@ -183,15 +183,41 @@ button {
   font-size: 0.875em;
   height: 3.2em;
   width: 3.2em;
-  border-radius: 50%;
+  border-radius: 0.55em;
   border: 1.5px solid currentColor;
   display: grid;
   place-items: center;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.25s, background 0.25s, color 0.25s;
 }
-.sound-line {
-  width: 0.9em;
-  height: 2px;
-  background: currentColor;
+#header-right-sound-btn:hover {
+  opacity: 1;
+}
+#header-right-sound-btn.is-on {
+  background: var(--color-black);
+  color: var(--color-white);
+  border-color: var(--color-black);
+  opacity: 1;
+}
+#header-right-sound-btn .sound-icon {
+  display: block;
+}
+/* Equalizer bars pulse while music is on */
+#header-right-sound-btn.is-on .sound-icon path {
+  animation: sound-eq 0.9s ease-in-out infinite;
+  transform-origin: center;
+}
+#header-right-sound-btn.is-on .sound-icon path:nth-child(1) { animation-delay: 0s; }
+#header-right-sound-btn.is-on .sound-icon path:nth-child(2) { animation-delay: 0.08s; }
+#header-right-sound-btn.is-on .sound-icon path:nth-child(3) { animation-delay: 0.16s; }
+#header-right-sound-btn.is-on .sound-icon path:nth-child(4) { animation-delay: 0.08s; }
+#header-right-sound-btn.is-on .sound-icon path:nth-child(5) { animation-delay: 0s; }
+@keyframes sound-eq {
+  0%, 100% { transform: scaleY(0.55); }
+  50% { transform: scaleY(1); }
 }
 #header-right-talk-btn,
 #header-right-menu-btn {
@@ -1059,6 +1085,7 @@ button {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   column-gap: var(--grid-gap);
   width: 100%;
+  will-change: transform;
 }
 #home-goal-title {
   position: relative;
@@ -1074,6 +1101,65 @@ button {
   will-change: transform;
   overflow: hidden;
 }
+/* Lusion tablet window (blackFrameShow → blackFrameIn) */
+#home-goal-image-in-outer {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / 7;
+}
+#home-goal-image-in-inner {
+  position: relative;
+  height: 0;
+  width: calc(100% + var(--grid-gap));
+  padding-top: calc((100% + var(--grid-gap)) * 1080 / 1496);
+}
+#home-goal-image-in {
+  position: absolute;
+  left: 3.9%;
+  top: 5.4%;
+  width: 92.5%;
+  height: 89.5%;
+  border-radius: 1.2vw;
+  overflow: visible;
+  pointer-events: none;
+}
+#home-goal-frame-bezel {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0;
+  visibility: hidden;
+}
+#home-goal-tunnel-sticky [data-goal-screen-clip] {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 1;
+}
+#home-goal-image-out-outer {
+  position: relative;
+  grid-column: 2 / 12;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+}
+#home-goal-image-out-inner {
+  position: relative;
+  width: calc(100% + var(--grid-gap) * 2);
+  left: calc(var(--grid-gap) * -1);
+  padding-top: calc((100% + var(--grid-gap) * 2) * 1537 / 2000);
+}
+#home-goal-image-out {
+  position: absolute;
+  left: 2.2%;
+  top: 2.8%;
+  width: 95.7%;
+  height: 70.2%;
+}
 /* Lusion: absolute over title on desktop, stacked full-width on mobile */
 #home-goal-texts {
   position: absolute;
@@ -1083,12 +1169,18 @@ button {
   grid-column: 8 / 12;
   line-height: 1.4;
   font-size: 1.5em;
+  width: calc((100% - var(--grid-gap) * 11) / 12 * 4 + var(--grid-gap) * 3);
+  margin-left: calc((100% - var(--grid-gap) * 11) / 12 * 7 + var(--grid-gap) * 7);
 }
 .home-goal-texts-paragraph {
   opacity: 1;
 }
 .home-goal-texts-paragraph:not(:first-child) {
   margin-top: 1em;
+}
+#home-goal-tunnel-sticky.is-windowed {
+  /* Framed inside tablet — not full-bleed yet */
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
 }
 #home-goal-tunnel-sticky {
   /* Lenis breaks CSS sticky — pin via JS (position:fixed) while section is active */
@@ -1480,10 +1572,28 @@ button {
     position: relative;
     grid-column: 1 / span 6;
     margin-top: 3em;
-    margin-bottom: 4em;
+    margin-bottom: 2em;
     font-size: 1.125em;
     left: auto;
     top: auto;
+    width: auto;
+    margin-left: 0;
+    transform: none !important;
+  }
+  #home-goal-image-in-outer {
+    grid-column: 1 / span 6;
+    margin-top: 1em;
+    margin-bottom: 2em;
+  }
+  #home-goal-image-in-inner {
+    width: 100%;
+  }
+  #home-goal-image-out-outer {
+    grid-column: 1 / span 6;
+  }
+  #home-goal-image-out-inner {
+    width: 100%;
+    left: 0;
   }
   /* Keep nowrap like Lusion — wrapping breaks word-spread offsets during title zoom */
   .home-goal-tunnel-title-line {

@@ -9,6 +9,9 @@ import { bindFeaturedProjects } from './featuredProjects.js'
 import { createFeaturedWebgl } from './featuredWebgl.js'
 import { bindReelScroll } from './reelScroll.js'
 import { createScrollLines } from './scrollLines.js'
+import { bindGoalFrame } from './goalFrame.js'
+import { createSiteAudio } from './audio.js'
+import { createGoalRanges } from './scrollRanges.js'
 
 const isMobile =
   /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
@@ -90,7 +93,10 @@ const goalCanvas = document.getElementById('goal-tunnel-canvas')
 const goalTitle = document.getElementById('home-goal-tunnel-title')
 const goalSticky = document.getElementById('home-goal-tunnel-sticky')
 const goalDom = bindGoalDomScroll(goalSection, goalTitle, goalSticky)
+const goalRanges = goalSection ? createGoalRanges(goalSection) : null
+const siteAudio = createSiteAudio()
 let goalTunnel = null
+let lastGoalPhase = ''
 
 // Lusion continuous scroll-time text (Bold Ideas / Featured / etc.)
 const scrollText = bindLusionScrollText()
@@ -98,6 +104,12 @@ const featuredProjects = bindFeaturedProjects()
 const reelScroll = bindReelScroll()
 let scrollLines = null
 let featuredWebgl = null
+// goalFrame needs scrollLines for cyan-arc expand — bind with a live getter
+const goalFrame = goalSection
+  ? bindGoalFrame(goalSection, goalSticky, goalRanges, {
+      setGoalFrame: (...args) => scrollLines?.setGoalFrame?.(...args),
+    })
+  : { update() {} }
 
 let lastTick = performance.now()
 gsap.ticker.add((time) => {
@@ -130,13 +142,20 @@ gsap.ticker.add((time) => {
   reelScroll.update(dt)
   scrollLines?.update()
   goalTunnel?.tickFrame?.(dt)
+  siteAudio.update(dt)
 })
 gsap.ticker.lagSmoothing(0)
 
 lenis.on('scroll', () => {
   goalDom.updateScroll()
+  goalFrame.update()
   goalTunnel?.updateScroll()
   scrollLines?.update()
+  const phase = goalSection?.dataset?.goalPhase || ''
+  if (phase && phase !== lastGoalPhase) {
+    lastGoalPhase = phase
+    siteAudio.syncGoalPhase(phase)
+  }
   if (!homeHero) return
   const rect = homeHero.getBoundingClientRect()
   const vh = window.innerHeight
@@ -277,9 +296,7 @@ document.querySelector('[data-reel]')?.addEventListener('click', (e) => {
   window.open('https://kianpk.github.io/zyrax-drive/', '_blank', 'noreferrer')
 })
 
-document.querySelector('[data-sound]')?.addEventListener('click', (e) => {
-  e.currentTarget.classList.toggle('is-on')
-})
+// Sound toggle handled by createSiteAudio()
 
 document.querySelector('#end-bottom')?.addEventListener('click', (e) => {
   e.preventDefault()

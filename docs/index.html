@@ -8,8 +8,8 @@
   <meta property="og:title" content="Zyrax — Kian Zarandi" />
   <meta property="og:url" content="https://kianpk.github.io/zyrax-studio/" />
   <script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
-  <script type="module" crossorigin src="/zyrax-studio/assets/index-6pTMBYvd.js"></script>
-  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-CNxuu5lK.css">
+  <script type="module" crossorigin src="/zyrax-studio/assets/index-CIAeUIaV.js"></script>
+  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-CAMJ9U4b.css">
 </head>
 <body>
   <canvas id="canvas" aria-hidden="true"></canvas>
@@ -21,7 +21,13 @@
         <a id="header-logo" href="#top" aria-label="Zyrax home">ZYRAX</a>
         <div id="header-right">
           <button id="header-right-sound-btn" type="button" aria-label="Sound" data-sound>
-            <span class="sound-line"></span>
+            <svg class="sound-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+              <path d="M4 10v4" />
+              <path d="M8 7v10" />
+              <path d="M12 4v16" />
+              <path d="M16 7v10" />
+              <path d="M20 10v4" />
+            </svg>
           </button>
           <a id="header-right-talk-btn" href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">
             <span id="header-right-talk-btn-text">LET'S TALK</span>
@@ -196,14 +202,24 @@
           </div>
 
           <div id="home-goal" class="section">
-            <!-- Lusion order: context + cyan line first, then tunnel pin -->
+            <!-- Lusion: context + tablet window, then tunnel expands out of the frame -->
             <div id="home-goal-context">
               <div id="home-goal-context-inner">
                 <div id="home-goal-title">Where Creative Ideas Become Immersive Experiences</div>
+                <div id="home-goal-image-in-outer">
+                  <div id="home-goal-image-in-inner">
+                    <div id="home-goal-image-in"></div>
+                  </div>
+                </div>
                 <div id="home-goal-texts">
-                  <div class="home-goal-texts-paragraph">I do not chase trends or produce work that looks like everyone else. I focus on creating visually distinctive digital experiences that reflect your brand, engage your audience, and make people remember what they saw.</div>
+                  <div class="home-goal-texts-paragraph">I do not chase trends or produce work that looks like everyone else. I focus on creating visually <strong>distinctive</strong> digital experiences that reflect <strong>your brand</strong>, engage your audience, and make people remember what they saw.</div>
                   <div class="home-goal-texts-paragraph">The process blends creative direction, 3D craft, and interactive development with production-grade engineering to build tailored digital journeys that feel original, polished, and built for impact.</div>
                 </div>
+              </div>
+            </div>
+            <div id="home-goal-image-out-outer">
+              <div id="home-goal-image-out-inner">
+                <div id="home-goal-image-out"></div>
               </div>
             </div>
             <div id="home-goal-tunnel-sticky">
