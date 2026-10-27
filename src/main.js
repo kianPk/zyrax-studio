@@ -5,6 +5,7 @@ import { createBalloonsHero } from './balloons.js'
 import { createGoalTunnel } from './tunnel.js'
 import { bindGoalDomScroll } from './goalDom.js'
 import { bindLusionScrollText } from './scrollText.js'
+import { createScrollLines } from './scrollLines.js'
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
@@ -60,6 +61,7 @@ let goalTunnel = null
 
 // Lusion continuous scroll-time text (Bold Ideas / Featured / etc.)
 const scrollText = bindLusionScrollText()
+let scrollLines = null
 
 let lastTick = performance.now()
 gsap.ticker.add((time) => {
@@ -68,12 +70,14 @@ gsap.ticker.add((time) => {
   const dt = Math.min(0.05, (now - lastTick) / 1000)
   lastTick = now
   scrollText.update(dt)
+  scrollLines?.update()
 })
 gsap.ticker.lagSmoothing(0)
 
 lenis.on('scroll', () => {
   goalDom.updateScroll()
   goalTunnel?.updateScroll()
+  scrollLines?.update()
   if (!homeHero) return
   const rect = homeHero.getBoundingClientRect()
   const vh = window.innerHeight
@@ -92,7 +96,13 @@ lenis.on('scroll', () => {
   }
 })
 
-// Boot WebGL scenes: goal first (heavier), then balloons
+// Boot WebGL: scroll lines (light) + goal tunnel, then balloons
+createScrollLines()
+  .then((api) => {
+    scrollLines = api
+  })
+  .catch((err) => console.error('Scroll lines failed', err))
+
 createGoalTunnel(goalCanvas, goalSection, goalTitle)
   .then((api) => {
     goalTunnel = api
