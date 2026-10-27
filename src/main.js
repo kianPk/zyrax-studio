@@ -4,6 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { projects } from './projects.js'
 import { createBalloonsHero } from './balloons.js'
 import { createGoalTunnel } from './tunnel.js'
+import { bindGoalDomScroll } from './goalDom.js'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -43,25 +44,24 @@ if (list) {
     .join('')
 }
 
-// Hero balloons (exact Lusion cross.buf + packed matcap.exr)
 const heroCanvas = document.getElementById('hero-canvas')
 const visual = document.getElementById('home-hero-visual-container')
 const homeHero = document.getElementById('home-hero')
-
-createBalloonsHero(heroCanvas, visual)
-  .then(() => {
-    homeHero?.classList.add('is-in')
-  })
-  .catch((err) => {
-    console.error('Balloons hero failed', err)
-    homeHero?.classList.add('is-in')
-  })
-
-// Hero scroll parallax (Lusion: balloons.ratio fades as section leaves)
 const heroTitle = document.getElementById('home-hero-title')
 const heroVisual = document.getElementById('home-hero-visual-container')
 const heroScrollHint = document.getElementById('home-hero-scroll-container')
+
+// Goal DOM scroll first (title zoom works without WebGL)
+const goalSection = document.getElementById('home-goal')
+const goalCanvas = document.getElementById('goal-tunnel-canvas')
+const goalTitle = document.getElementById('home-goal-tunnel-title')
+const goalSticky = document.getElementById('home-goal-tunnel-sticky')
+const goalDom = bindGoalDomScroll(goalSection, goalTitle, goalSticky)
+let goalTunnel = null
+
 lenis.on('scroll', () => {
+  goalDom.updateScroll()
+  goalTunnel?.updateScroll()
   if (!homeHero) return
   const rect = homeHero.getBoundingClientRect()
   const vh = window.innerHeight
@@ -69,22 +69,18 @@ lenis.on('scroll', () => {
   const leave = Math.max(0, Math.min(1, (vh - rect.bottom) / vh))
   if (heroTitle) {
     heroTitle.style.transform = `translate3d(0, ${ratio * -12}vh, 0)`
-    heroTitle.style.opacity = String(1 - ratio * 1.2)
+    heroTitle.style.opacity = String(Math.max(0, 1 - ratio * 1.2))
   }
   if (heroVisual) {
     heroVisual.style.transform = `translate3d(0, ${ratio * 18}vh, 0) scale(${1 - ratio * 0.08})`
-    heroVisual.style.opacity = String(1 - Math.max(ratio, leave) * 0.85)
+    heroVisual.style.opacity = String(Math.max(0, 1 - Math.max(ratio, leave) * 0.85))
   }
   if (heroScrollHint) {
-    heroScrollHint.style.opacity = String(1 - ratio * 2)
+    heroScrollHint.style.opacity = String(Math.max(0, 1 - ratio * 2))
   }
 })
 
-// Goal tunnel + astronaut (Lusion home-goal)
-const goalSection = document.getElementById('home-goal')
-const goalCanvas = document.getElementById('goal-tunnel-canvas')
-const goalTitle = document.getElementById('home-goal-tunnel-title')
-let goalTunnel = null
+// Boot WebGL scenes: goal first (heavier), then balloons
 createGoalTunnel(goalCanvas, goalSection, goalTitle)
   .then((api) => {
     goalTunnel = api
@@ -92,9 +88,14 @@ createGoalTunnel(goalCanvas, goalSection, goalTitle)
   .catch((err) => {
     console.error('Goal tunnel failed', err)
   })
-lenis.on('scroll', () => {
-  goalTunnel?.updateScroll()
-})
+  .finally(() => {
+    createBalloonsHero(heroCanvas, visual)
+      .then(() => homeHero?.classList.add('is-in'))
+      .catch((err) => {
+        console.error('Balloons hero failed', err)
+        homeHero?.classList.add('is-in')
+      })
+  })
 
 function splitWords(el, className = 'word') {
   if (!el) return

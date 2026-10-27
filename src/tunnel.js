@@ -289,23 +289,8 @@ void main() {
 export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
   const base = import.meta.env.BASE_URL
-  const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0xf0f1fa)
 
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400)
-  camera.position.set(0, 0, 28)
-
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: !isMobile,
-    alpha: false,
-    powerPreference: 'high-performance',
-  })
-  renderer.setClearColor(0xf0f1fa, 1)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
-  renderer.outputColorSpace = THREE.SRGBColorSpace
-
-  // --- load assets ---
+  // --- load assets first (before allocating a second WebGL context) ---
   const [
     animGeo,
     inAnim,
@@ -327,6 +312,28 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     loadBuf(`${base}assets/models/tunnels/tunnel_block_wall.buf`),
     ...PARTS.map((p) => loadBuf(`${base}assets/models/tunnels/astronaut_${p}.buf`)),
   ])
+
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(0xf0f1fa)
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400)
+  camera.position.set(0, 0, 28)
+
+  let renderer
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: !isMobile,
+      alpha: false,
+      powerPreference: 'high-performance',
+      failIfMajorPerformanceCaveat: false,
+    })
+  } catch (err) {
+    console.error('Goal WebGL unavailable', err)
+    throw err
+  }
+  renderer.setClearColor(0xf0f1fa, 1)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
+  renderer.outputColorSpace = THREE.SRGBColorSpace
 
   matcap.colorSpace = THREE.NoColorSpace
   envMap.colorSpace = THREE.SRGBColorSpace
