@@ -37,8 +37,7 @@ void main() {
     vec2 ghostVec = (vec2(0.5) - ghostUv);
     vec2 direction = length(ghostVec) > 1e-5 ? normalize(ghostVec) : vec2(0.0);
     vec2 haloVec = direction * u_haloWidth;
-    float weight = length(vec2(0.5) - fract(ghostUv + haloVec));
-    weight = pow(1.0 - weight, 3.0);
+    // weight is computed in Lusion but unused — ring comes from bloom blur of RGB-split ghost
     // Lusion: distortion = texelSize * (haloRGBShift * screenWidth) ≈ ±haloRGBShift in UV
     vec3 distortion = vec3(-1.0, 0.0, 1.0) * u_haloRGBShift;
     float zoomBlurRatio = fract(atan(toCenter.y, toCenter.x) * 40.0) * 0.05 + 0.95;
@@ -49,7 +48,7 @@ void main() {
       texture2D(u_texture, haloUv + direction * distortion.g).g,
       texture2D(u_texture, haloUv + direction * distortion.b).b
     );
-    halo *= u_haloStrength * weight * smoothstep(u_haloMaskInner, u_haloMaskOuter, length(toCenter));
+    halo *= u_haloStrength * smoothstep(u_haloMaskInner, u_haloMaskOuter, length(toCenter));
     gl_FragColor.rgb += halo;
   }
 }
