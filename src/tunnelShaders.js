@@ -190,7 +190,8 @@ ${astronautCommonBody}
   gl_FragColor.rgb = min(vec3(1.0), gl_FragColor.rgb + u_tintColor * (1.0 - u_frameOutRatio * 0.3) * (0.4 + gl_FragColor.b * 0.6));
   gl_FragColor.rgb *= 0.95 + mix(u_tintColor, vec3(1.0), v_ao) * 0.1;
   gl_FragColor.rgb *= mix(1.0, metalMask * 0.7 + 0.3, linearStep(0.8, 1.0, u_frameOutRatio));
-  gl_FragColor.a = 1.0;
+  // Lusion fragWhite: tiny alpha so Stage3D bloom doesn't wash the suit/visor
+  gl_FragColor.a = 0.01;
 }
 `
 

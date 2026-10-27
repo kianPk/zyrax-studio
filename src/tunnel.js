@@ -159,22 +159,6 @@ void main() {
 }
 `
 
-const glassFrag = /* glsl */ `
-uniform vec3 u_bgColor;
-uniform float u_showRatio;
-varying vec3 v_worldNormal;
-varying vec3 v_viewPosition;
-varying float v_ao;
-void main() {
-  vec3 N = normalize(v_worldNormal);
-  vec3 V = normalize(v_viewPosition);
-  float fresnel = pow(1.0 - abs(dot(N, V)), 2.2);
-  vec3 color = mix(vec3(0.55, 0.72, 0.9), vec3(1.0), fresnel);
-  color = mix(u_bgColor, color, u_showRatio);
-  gl_FragColor = vec4(color, 0.35 + fresnel * 0.45);
-}
-`
-
 export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
   const base = import.meta.env.BASE_URL
@@ -396,20 +380,21 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       u_armbTexture: { value: partTex[texKey].armb },
       u_norTexture: { value: partTex[texKey].nor },
     }
+    // Lusion: helmet_glass uses same fragWhite/fragBlack + IS_HELMET_GLASS
+    // (skips env add). Custom fresnel glass was blowing the visor white.
     const whiteMat = new THREE.ShaderMaterial({
       uniforms: whiteUniforms,
       vertexShader: astronautVert,
-      fragmentShader: isGlass ? glassFrag : astronautWhiteFrag,
-      transparent: isGlass,
-      // Lusion: NoBlending on non-glass white (avoids transparent sort holes)
-      blending: isGlass ? THREE.NormalBlending : THREE.NoBlending,
+      fragmentShader: astronautWhiteFrag,
+      transparent: true,
+      blending: THREE.NoBlending,
       side: THREE.DoubleSide,
-      defines: { BONE_COUNT, ...(isGlass ? { IS_HELMET_GLASS: true } : {}) },
+      defines: { BONE_COUNT, IS_WHITE: true, ...(isGlass ? { IS_HELMET_GLASS: true } : {}) },
     })
     const blackMat = new THREE.ShaderMaterial({
       uniforms: blackUniformsAstro,
       vertexShader: astronautVert,
-      fragmentShader: isGlass ? glassFrag : astronautBlackFrag,
+      fragmentShader: astronautBlackFrag,
       transparent: true,
       blending: THREE.NoBlending,
       side: THREE.DoubleSide,
