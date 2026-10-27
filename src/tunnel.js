@@ -877,6 +877,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let raf = 0
   let last = performance.now()
   let active = false
+  let wasStickyActive = false
 
   // Lusion Stage3D bloom + halo RGB-shift (chromatic rings / glow)
   const post = createTunnelPost(renderer, scene, camera)
@@ -1125,6 +1126,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
     const stickyRect = stickyEl.getBoundingClientRect()
     active = stickyRect.bottom > 0 && stickyRect.top < vh
+    // Fresh entry pose when sticky first pins — avoids mid-idle arms after long load
+    if (active && !wasStickyActive && isBlackTitleActive) {
+      animationTime = 0
+      pauseLoopTime = 0
+    }
+    wasStickyActive = active
     sectionEl.dataset.goalPhase = isWhiteTunnelActive
       ? 'white'
       : isBlackTunnelActive
@@ -1321,7 +1328,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     if (drop < 0.5) {
       // Entry idle loop (frames 0–89)
       pauseLoopTime = 0
-      speed = smoothstep(-0.3, 1, blackTitleRatio) * 0.75
+      // Keep early title near the iconic arms-out frames (Lusion marketing pose)
+      speed =
+        blackTitleRatio < 0.08
+          ? smoothstep(-0.3, 1, blackTitleRatio) * 0.25
+          : smoothstep(-0.3, 1, blackTitleRatio) * 0.75
       loopFrom = 0
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0

@@ -6,6 +6,7 @@ import { createGoalTunnel } from './tunnel.js'
 import { bindGoalDomScroll } from './goalDom.js'
 import { bindLusionScrollText } from './scrollText.js'
 import { bindFeaturedProjects } from './featuredProjects.js'
+import { createFeaturedWebgl } from './featuredWebgl.js'
 import { bindReelScroll } from './reelScroll.js'
 import { createScrollLines } from './scrollLines.js'
 
@@ -94,6 +95,7 @@ const scrollText = bindLusionScrollText()
 const featuredProjects = bindFeaturedProjects()
 const reelScroll = bindReelScroll()
 let scrollLines = null
+let featuredWebgl = null
 
 let lastTick = performance.now()
 gsap.ticker.add((time) => {
@@ -122,6 +124,7 @@ gsap.ticker.add((time) => {
   lenis.raf(time * 1000)
   scrollText.update(dt)
   featuredProjects.update(dt)
+  featuredWebgl?.update(dt)
   reelScroll.update(dt)
   scrollLines?.update()
   goalTunnel?.tickFrame?.(dt)
@@ -172,6 +175,13 @@ createGoalTunnel(goalCanvas, goalSection, goalTitle)
         homeHero?.classList.add('is-in')
       })
   })
+
+// Lusion ProjectItem UfxMesh — depth parallax WebGL cards
+createFeaturedWebgl(projects)
+  .then((api) => {
+    featuredWebgl = api
+  })
+  .catch((err) => console.error('Featured WebGL failed', err))
 
 function splitWords(el, className = 'word') {
   if (!el) return

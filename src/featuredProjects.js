@@ -1,6 +1,6 @@
 /**
- * Lusion ProjectItemList / ProjectItem — DOM scroll + hover (no WebGL UfxMesh).
- * Scramble tags, stacked letter title reveal, staggered show, hover shift.
+ * Lusion ProjectItemList / ProjectItem — DOM text/footer anims.
+ * Image depth-parallax lives in featuredWebgl.js (UfxMesh port).
  */
 import { clamp, saturate, fit, easeLusion, easeExpoInOut, getDomRange } from './scrollMath.js'
 
@@ -137,19 +137,19 @@ export function bindFeaturedProjects(root = document) {
           }
         }
 
-        // Image hover parallax / zoom (DOM stand-in for UfxMesh)
+        // Image hover is handled by featuredWebgl.js — keep DOM image still
         hoverRatio = clamp(hoverRatio + (isHover ? 1 : -1) * dt, 0, 1)
-        if (isHover) {
-          shiftTX = (Math.random() - 0.5) * fit(hoverRatio, 0, 0.6, 1, 0) * 8
-          shiftTY = (Math.random() - 0.5) * fit(hoverRatio, 0, 0.6, 1, 0) * 8
-        } else {
-          shiftTX *= 0.92
-          shiftTY *= 0.92
-        }
-        shiftX += (shiftTX - shiftX) * 0.2
-        shiftY += (shiftTY - shiftY) * 0.2
-        const zoom = fit(hoverRatio, 0, 1, 1, 1.06, easeLusion)
-        if (image) {
+        if (image && !document.documentElement.classList.contains('has-featured-webgl')) {
+          if (isHover) {
+            shiftTX = (Math.random() - 0.5) * fit(hoverRatio, 0, 0.6, 1, 0) * 8
+            shiftTY = (Math.random() - 0.5) * fit(hoverRatio, 0, 0.6, 1, 0) * 8
+          } else {
+            shiftTX *= 0.92
+            shiftTY *= 0.92
+          }
+          shiftX += (shiftTX - shiftX) * 0.2
+          shiftY += (shiftTY - shiftY) * 0.2
+          const zoom = fit(hoverRatio, 0, 1, 1, 1.06, easeLusion)
           image.style.transform = `translate3d(${shiftX}px, ${shiftY}px, 0) scale(${zoom})`
         }
       },

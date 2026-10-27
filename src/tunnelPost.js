@@ -355,6 +355,17 @@ export function createTunnelPost(renderer, scene, camera) {
       hs = hs + (0.08 - hs) * t
     }
     if (isWhiteTunnelActive) hs = 0
+    // Desktop Lusion USE_CONVOLUTION FFT bloom reads as a soft chromatic ring
+    // around the astronaut during blackTitle. Our gaussian path needs an
+    // explicit halo lift so the entry matches that ring (exact formula starts at 0).
+    if (!isWhiteTunnelActive && !isMobile && blackFrameInRatio > 0.85 && blackTunnelRatio < 0.05) {
+      const entryRing = THREE.MathUtils.lerp(
+        0.16,
+        0.1,
+        THREE.MathUtils.clamp(blackTitleRatio / 0.35, 0, 1)
+      )
+      hs = Math.max(hs, entryRing * blackFrameInRatio)
+    }
     // Portrait: slightly stronger halo so the title-ring reads like Lusion
     if (isMobile && !isWhiteTunnelActive) hs *= 1.05
     haloStrength = hs
@@ -397,12 +408,13 @@ export function createTunnelPost(renderer, scene, camera) {
     }
 
     haloWidth = 0.6
-    haloRGBShift = isMobile ? 0.012 : 0.015
+    // Stage3D default haloRGBShift is 0.02 — keeps the rainbow entry ring vivid
+    haloRGBShift = isMobile ? 0.012 : 0.02
     haloMaskInner = 0.3
     haloMaskOuter = 0.5
     // Desktop approximates FFT star bloom with a softer gaussian radius so
     // speculars (visor glint) don't become hard rectangular blobs.
-    bloomRadius = isMobile ? 0 : 0.4
+    bloomRadius = isMobile ? 0 : 0.45
     highPassMultiplier = 1
     efxActive = isBlackTunnelActive || isWhiteTunnelActive
   }
@@ -529,7 +541,8 @@ export function createTunnelPost(renderer, scene, camera) {
       // Gaussian dissipates differently than the FFT star kernel — gain keeps a
       // visible soft halo/glint without the blown shoulder bloom.
       // Soft lift toward Lusion FFT bloom without the old gaussian washout.
-      amountForWeights = convAmount * 36
+      // Slightly stronger so entry suit aura + ring read like the FFT star kernel.
+      amountForWeights = convAmount * 40
     }
     for (let u = 0; u < ITERATION; u++) {
       const f = (ITERATION - u) / ITERATION
@@ -538,9 +551,9 @@ export function createTunnelPost(renderer, scene, camera) {
         (f + (1.2 - f * 2) * bloomRadius) /
         Math.pow(2, ITERATION - u - 1)
       // Soften sharpest mips — FFT star kernel spreads specular energy wide.
-      if (!isMobileBloom && u === 0) w *= 0.2
-      if (!isMobileBloom && u === 1) w *= 0.55
-      if (!isMobileBloom && u >= 3) w *= 1.35
+      if (!isMobileBloom && u === 0) w *= 0.18
+      if (!isMobileBloom && u === 1) w *= 0.5
+      if (!isMobileBloom && u >= 3) w *= 1.55
       bloomWeights[u] = w
     }
 
