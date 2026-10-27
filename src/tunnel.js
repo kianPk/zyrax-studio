@@ -213,10 +213,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x000000)
-  // Lusion GoalTunnels Stage3D: defaultCamera (0,0,25) → lookAt (0,0,24), fov ~30
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 400)
-  camera.position.set(0, 0, 25)
-  camera.lookAt(0, 0, 24)
+  // Lusion GoalTunnels: defaultCamera (0,0,25) → lookAt (0,0,24), expectedFov 45
+  // CameraControls keeps FOV at cameraFov and applies dolly via translateZ
+  const DEFAULT_CAM = new THREE.Vector3(0, 0, 25)
+  const DEFAULT_LOOK = new THREE.Vector3(0, 0, 24)
+  const EXPECTED_FOV = 45
+  const camera = new THREE.PerspectiveCamera(EXPECTED_FOV, 1, 1, 200)
+  camera.position.copy(DEFAULT_CAM)
+  camera.lookAt(DEFAULT_LOOK)
 
   let renderer
   try {
@@ -273,13 +277,17 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const blend2 = new THREE.InstancedBufferAttribute(new Float32Array([90, 91, 0]), 3)
   blend2.setUsage(THREE.DynamicDrawUsage)
 
-  // feedback + astronaut env (Lusion copies black tunnel RT → blur → astronaut)
+  // feedback ping-pong (never sample RT while rendering into it)
   const feedbackRT = new THREE.WebGLRenderTarget(1, 1, {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     format: THREE.RGBAFormat,
   })
   feedbackRT.texture.wrapS = feedbackRT.texture.wrapT = THREE.MirroredRepeatWrapping
+  const feedbackRT2 = feedbackRT.clone()
+  feedbackRT2.texture.wrapS = feedbackRT2.texture.wrapT = THREE.MirroredRepeatWrapping
+  let feedbackRead = feedbackRT
+  let feedbackWrite = feedbackRT2
 
   const sharedUniforms = {
     u_animationPositionTexture: { value: animPosTex },
@@ -299,7 +307,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   }
 
   const blackAstroUniforms = {
-    u_blackTunnelTexture: { value: feedbackRT.texture },
+    u_blackTunnelTexture: { value: feedbackRead.texture },
     u_sunFactor: { value: 1 },
     u_blackTunnelRatio: { value: 0 },
     u_offsetZ: { value: 0 },
@@ -440,7 +448,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     u_showRatio: { value: 0 },
     u_offsetZ: { value: 0 },
     u_blackTunnelTransformRatio: { value: 0 },
-    u_feedbackTexture: { value: feedbackRT.texture },
+    u_feedbackTexture: { value: feedbackRead.texture },
     u_greebleArmbTexture: { value: greebleArmb },
     u_greebleNormalTexture: { value: greebleNor },
     u_resolution: { value: new THREE.Vector2(1, 1) },
@@ -496,7 +504,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let blackPulseTime = 0
   let blackLinearTime = 0
   let cameraDollyZoomFovOffset = 0
-  let cameraDistance = 25
+  let baseCameraFov = EXPECTED_FOV
   // Brownian-ish motion state (Lusion astronaut shake)
   const motionPos = new THREE.Vector3()
   const motionEuler = new THREE.Euler()
@@ -504,6 +512,36 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const tmpQ = new THREE.Quaternion()
   const colorA = new THREE.Color()
   const colorB = new THREE.Color()
+  const camForward = new THREE.Vector3()
+  const camTmp = new THREE.Vector3()
+
+  /** Port of Lusion CameraControls dolly-zoom (FOV stays base; distance shifts). */
+  const applyCamera = () => {
+    camera.near = 1
+    camera.far = 200
+    camera.position.copy(DEFAULT_CAM)
+    camera.up.set(0, 1, 0)
+    camera.lookAt(DEFAULT_LOOK)
+    camera.fov = baseCameraFov
+    camForward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+    let cameraDistance = camTmp.copy(DEFAULT_LOOK).sub(camera.position).dot(camForward)
+    const baseFov = camera.fov
+    const tempFov = baseFov + cameraDollyZoomFovOffset
+    // avoid div0 / extreme
+    const safeTemp = Math.max(1, Math.min(170, tempFov))
+    let n =
+      (cameraDistance * Math.tan(((baseFov / 360) * Math.PI) / 2)) /
+        Math.tan(((safeTemp / 360) * Math.PI) / 2) -
+      cameraDistance
+    if (!Number.isFinite(n)) n = 0
+    camera.translateZ(n)
+    camera.fov = baseFov
+    cameraDistance += n
+    // Lusion desktop path: translate to look point, then back out by distance
+    camera.translateZ(cameraDistance * -1)
+    camera.translateZ(cameraDistance)
+    camera.updateProjectionMatrix()
+  }
 
   const stickyEl = canvas.parentElement || sectionEl
   const ranges = createGoalRanges(sectionEl)
@@ -528,13 +566,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     const w = parent.clientWidth || window.innerWidth
     const h = parent.clientHeight || window.innerHeight
     camera.aspect = w / Math.max(h, 1)
-    camera.updateProjectionMatrix()
+    applyCamera()
     renderer.setSize(w, h, false)
     blackUniforms.u_resolution.value.set(w, h)
     const fw = Math.max(1, Math.floor(w * 0.25))
     const fh = Math.max(1, Math.floor(h * 0.25))
     if (feedbackRT.width !== fw || feedbackRT.height !== fh) {
       feedbackRT.setSize(fw, fh)
+      feedbackRT2.setSize(fw, fh)
     }
   }
   resize()
@@ -658,33 +697,25 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     instanceOrient.needsUpdate = true
     astronautRoot.visible = showRatio > 0.02
 
-    // —— Lusion Stage3D camera: fixed look-forward + dolly-zoom FOV ——
+    // —— Lusion CameraControls: base FOV ~45, dolly via distance ——
+    // updateRatios: full-viewport frame → expectedFov 45
+    baseCameraFov = EXPECTED_FOV
     if (isWhiteTunnelActive) {
+      // white opens with large dolly offset (FOV stays base)
       cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
+      // as white frame grows, approximate wider FOV from shrinking frameHeight
+      baseCameraFov = fit(whiteFrameRatio, 0, 1, EXPECTED_FOV, 70)
     } else if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *
         7.5 *
         smoothstep(0, 0.2, blackTunnelRatio)
-      // container.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
       blackTunnelGroup.position.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
     } else {
       cameraDollyZoomFovOffset = fit(blackFrameInRatio, 0, 1, 20, 0)
       blackTunnelGroup.position.z = -80
     }
-
-    const baseFov = 30
-    const fov = baseFov + cameraDollyZoomFovOffset
-    const prevFov = camera.fov || baseFov
-    camera.fov = fov
-    let dist = cameraDistance
-    dist =
-      (dist * Math.tan(((prevFov / 360) * Math.PI) / 2)) /
-        Math.tan(((fov / 360) * Math.PI) / 2) || dist
-    camera.position.set(0, 0, dist)
-    camera.lookAt(0, 0, dist - 1)
-    cameraDistance = dist
-    camera.updateProjectionMatrix()
+    applyCamera()
 
     // black astronaut uniforms (scroll-linked)
     blackAstroUniforms.u_frameIn.value = blackFrameInRatio
@@ -800,20 +831,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     updateBlackTunnel(dt)
     updateWhiteTunnel(dt)
 
-    // keep FOV live during black tunnel pulse
+    // live black-tunnel FOV pulse
     if (isBlackTunnelActive) {
-      const baseFov = 30
-      const fov = baseFov + cameraDollyZoomFovOffset
-      const prevFov = camera.fov || baseFov
-      camera.fov = fov
-      let dist = cameraDistance
-      dist =
-        (dist * Math.tan(((prevFov / 360) * Math.PI) / 2)) /
-          Math.tan(((fov / 360) * Math.PI) / 2) || dist
-      camera.position.set(0, 0, dist)
-      camera.lookAt(0, 0, dist - 1)
-      cameraDistance = dist
-      camera.updateProjectionMatrix()
+      cameraDollyZoomFovOffset =
+        Math.sin(blackTunnelRatio * 10 + tunnelTime) *
+        7.5 *
+        smoothstep(0, 0.2, blackTunnelRatio)
+      applyCamera()
     }
 
     // bone loop — Lusion updateAnimation
@@ -845,24 +869,29 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     sharedUniforms.u_loopLinearBlend.value =
       fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
 
-    // Feedback: render black tunnel alone into low-res RT for trail + astronaut env
+    // Feedback: render black tunnel into write RT while sampling previous read RT
     if (isBlackTunnelActive) {
       const prevBg = scene.background
       astronautRoot.visible = false
       tunnelGroup.visible = false
       bgPlane.visible = false
       scene.background = new THREE.Color(0x000000)
-      renderer.setRenderTarget(feedbackRT)
+      blackUniforms.u_feedbackTexture.value = feedbackRead.texture
+      renderer.setRenderTarget(feedbackWrite)
       renderer.setClearColor(0x000000, 1)
       renderer.clear()
       renderer.render(scene, camera)
       renderer.setRenderTarget(null)
+      // swap
+      const tmp = feedbackRead
+      feedbackRead = feedbackWrite
+      feedbackWrite = tmp
+      blackUniforms.u_feedbackTexture.value = feedbackRead.texture
+      blackAstroUniforms.u_blackTunnelTexture.value = feedbackRead.texture
       astronautRoot.visible = showRatio > 0.02
       tunnelGroup.visible = false
       bgPlane.visible = true
       scene.background = prevBg
-      blackUniforms.u_feedbackTexture.value = feedbackRT.texture
-      blackAstroUniforms.u_blackTunnelTexture.value = feedbackRT.texture
     }
 
     renderer.setClearColor(sharedUniforms.u_bgColor.value, 1)
@@ -884,6 +913,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       window.removeEventListener('resize', resize)
       window.removeEventListener('scroll', onScroll)
       feedbackRT.dispose()
+      feedbackRT2.dispose()
       renderer.dispose()
     },
   }
