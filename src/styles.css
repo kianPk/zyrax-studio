@@ -283,6 +283,17 @@ button {
   height: 100%;
   cursor: pointer;
   position: relative;
+  will-change: transform, opacity;
+  transform-origin: center bottom;
+}
+#home-hero-title {
+  will-change: transform, opacity;
+}
+#home-reel-title {
+  overflow: hidden;
+}
+#home-reel-title .scrub-word {
+  will-change: transform, opacity;
 }
 #hero-canvas {
   width: 100%;
@@ -582,12 +593,13 @@ button {
   letter-spacing: 0.06em;
 }
 
-/* GOAL — scroll tunnel + astronaut (Lusion homage) */
+/* GOAL — long weighted scroll like Lusion (~many vh) */
 #home-goal {
   display: block;
   padding: 0;
-  height: calc(var(--vh, 1vh) * 320);
+  padding-bottom: calc(var(--vh, 1vh) * 2200);
   position: relative;
+  min-height: calc(var(--vh, 1vh) * 100);
 }
 #home-goal-tunnel-sticky {
   position: sticky;
@@ -595,7 +607,7 @@ button {
   height: calc(var(--vh, 1vh) * 100);
   width: 100%;
   overflow: hidden;
-  background: var(--color-off-white);
+  background: #0b0b12;
 }
 #goal-tunnel-canvas {
   position: absolute;
@@ -609,14 +621,22 @@ button {
   left: 50%;
   top: 50%;
   transform: translate3d(-50%, -50%, 0);
-  width: min(90vw, 1100px);
-  font-size: clamp(2.2rem, 6.5vw, 6.2rem);
+  width: min(92vw, 1200px);
+  font-size: clamp(2rem, 6vw, 6vw);
   line-height: 1.02;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
   text-align: center;
+  text-transform: uppercase;
   pointer-events: none;
   z-index: 2;
   will-change: transform, opacity;
+  color: var(--color-white);
+  opacity: 0;
+}
+#home-goal-tunnel-title.is-on-black {
+  color: var(--color-white);
+}
+#home-goal-tunnel-title:not(.is-on-black) {
   color: var(--color-black);
 }
 .home-goal-tunnel-title-line {
@@ -625,8 +645,9 @@ button {
 }
 .home-goal-tunnel-title-line .goal-word {
   display: inline-block;
+  position: relative;
   will-change: transform;
-  margin-right: 0.28em;
+  margin: 0 0.25ch;
 }
 .home-goal-texts-paragraph {
   position: relative;
@@ -634,7 +655,8 @@ button {
   max-width: 36rem;
   margin: 0 auto;
   padding: clamp(40px, 8vw, 120px) var(--base-padding-x) clamp(80px, 12vw, 160px);
-  transform: translateY(-30vh);
+  opacity: 0;
+  color: var(--color-black);
 }
 .home-goal-texts-paragraph p {
   font-size: clamp(1.05rem, 1.3vw, 1.25rem);
@@ -831,10 +853,13 @@ button {
     grid-column: 1 / -1;
   }
   #home-goal {
-    height: calc(var(--vh, 1vh) * 280);
+    padding-bottom: calc(var(--vh, 1vh) * 1600);
   }
   .home-goal-tunnel-title-line {
     white-space: normal;
+  }
+  #home-goal-tunnel-title {
+    font-size: clamp(1.6rem, 7vw, 2.4rem);
   }
   #home-featured-title-top,
   .project-list,

@@ -1,14 +1,10 @@
 import * as THREE from 'three'
 import { loadBuf } from './bufLoader.js'
+import { createGoalRanges, fit, easeCubicIn, easeCubicInOut } from './scrollRanges.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
 const PARTS = ['helmet', 'helmet_glass', 'glove_shoes', 'wearpack']
-
-function fit(v, a, b, c, d) {
-  const t = Math.max(0, Math.min(1, (v - a) / ((b - a) || 1)))
-  return c + (d - c) * t
-}
 
 function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -470,13 +466,34 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const baseMat = makeBlockMesh(blockBase, false)
   const wallMat = makeBlockMesh(blockWall, true)
 
-  // soft light fill plane behind
-  const bgPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(80, 80),
-    new THREE.MeshBasicMaterial({ color: 0xf0f1fa })
-  )
-  bgPlane.position.z = -40
+  // soft fill plane — switches black↔white across phases
+  const bgMatPlane = new THREE.MeshBasicMaterial({ color: 0x0b0b12 })
+  const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), bgMatPlane)
+  bgPlane.position.z = -50
   scene.add(bgPlane)
+
+  // black-tunnel depth rings (lightweight stand-in for greeble grid)
+  const blackTunnelGroup = new THREE.Group()
+  scene.add(blackTunnelGroup)
+  const ringGeo = new THREE.TorusGeometry(6.2, 0.045, 8, 48)
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x2a3344,
+    transparent: true,
+    opacity: 0.55,
+  })
+  for (let i = 0; i < 28; i++) {
+    const ring = new THREE.Mesh(ringGeo, ringMat)
+    ring.position.z = -i * 3.2
+    ring.rotation.x = Math.PI / 2
+    blackTunnelGroup.add(ring)
+  }
+  const streakMat = new THREE.MeshBasicMaterial({ color: 0x5a90ff, transparent: true, opacity: 0.08 })
+  for (let i = 0; i < 12; i++) {
+    const streak = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 70), streakMat)
+    const a = (i / 12) * Math.PI * 2
+    streak.position.set(Math.cos(a) * 5.6, Math.sin(a) * 5.6, -35)
+    blackTunnelGroup.add(streak)
+  }
 
   // title word split for Lusion-style expand
   const titleLines = titleEl ? Array.from(titleEl.querySelectorAll('.home-goal-tunnel-title-line')) : []
@@ -485,8 +502,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     line.innerHTML = words.map((w) => `<span class="goal-word">${w}</span>`).join(' ')
   })
 
+  const ranges = createGoalRanges(sectionEl)
   let whiteTunnelRatio = 0
   let showRatio = 0
+  let blackTitleRatio = 0
+  let blackTunnelRatio = 0
+  let astronautDropRatio = 0
   let animationTime = 0
   let raf = 0
   let last = performance.now()
@@ -520,60 +541,113 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     if (!sectionEl) return
     const rect = sectionEl.getBoundingClientRect()
     const vh = window.innerHeight
-    const total = rect.height - vh
-    const scrolled = Math.max(0, Math.min(1, -rect.top / Math.max(total, 1)))
-    // Lusion-ish ranges: title zoom early, tunnel mid, astronaut reveal
-    whiteTunnelRatio = fit(scrolled, 0.12, 0.72, 0, 1)
-    showRatio = fit(scrolled, 0.05, 0.25, 0, 1)
-    const frameOut = fit(scrolled, 0.55, 0.85, 0, 1)
+
+    blackTitleRatio = ranges.range('blackTitle').ratio
+    blackTunnelRatio = ranges.range('blackTunnel').ratio
+    whiteTunnelRatio = ranges.between('whiteTunnel', 'whiteFrameOut').ratio
+    const whiteFrameOut = ranges.range('whiteFrameOut').ratio
+    astronautDropRatio = ranges.range('astronautDrop').ratio
+    const whiteActive = ranges.between('whiteTunnel', 'astronautDrop').raw > 0
+    const blackActive = ranges.between('blackTitle', 'blackTunnel').raw > 0 && !whiteActive
+
+    // astronaut appears during late black title → through white tunnel
+    showRatio = fit(ranges.between('blackTitle', 'whiteTunnel').ratio, 0.35, 1, 0, 1)
+    const frameOut = fit(whiteTunnelRatio, 0.55, 1, 0, 1)
+
     sharedUniforms.u_whiteTunnelRatio.value = whiteTunnelRatio
     sharedUniforms.u_showRatio.value = showRatio
-    sharedUniforms.u_frameOutRatio.value = frameOut
+    sharedUniforms.u_frameOutRatio.value = Math.max(frameOut, fit(blackTunnelRatio, 0.7, 1, 0, 1))
     baseMat.uniforms.u_ratio.value = whiteTunnelRatio
     wallMat.uniforms.u_ratio.value = whiteTunnelRatio
     baseMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
     wallMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
 
-    // path: in-anim then out-anim
+    // phase colors
+    const toWhite = fit(whiteTunnelRatio, 0, 0.25, 0, 1)
+    const bg = new THREE.Color().setStyle('#0b0b12').lerp(new THREE.Color('#f0f1fa'), toWhite)
+    bgMatPlane.color.copy(bg)
+    scene.background = bg
+    renderer.setClearColor(bg, 1)
+    sharedUniforms.u_bgColor.value.copy(bg)
+    tunnelGroup.visible = whiteTunnelRatio > 0.001
+    blackTunnelGroup.visible = blackTunnelRatio > 0.001 && whiteTunnelRatio < 0.85
+    blackTunnelGroup.position.z = fit(blackTunnelRatio, 0, 1, 0, 55)
+    ringMat.opacity = fit(blackTunnelRatio, 0, 0.15, 0, 0.6) * fit(whiteTunnelRatio, 0, 0.4, 1, 0)
+
+    // path: in-anim during black title, out during drop
+    const isWhiteTunnel = whiteTunnelRatio > 0 || whiteFrameOut > 0 || astronautDropRatio > 0
     let path
-    if (whiteTunnelRatio < 1) {
-      path = samplePath(inAnim, fit(whiteTunnelRatio, 0, 1, 0, 0.79))
+    if (isWhiteTunnel) {
+      if (whiteTunnelRatio < 1) {
+        path = samplePath(outAnim, fit(whiteTunnelRatio, 0, 1, 0, 0.79))
+      } else {
+        path = samplePath(outAnim, fit(astronautDropRatio, 0, 1, 0.79, 0.99))
+        path.p.y -= (isMobile ? 0 : 0.4) * easeCubicIn(astronautDropRatio)
+      }
     } else {
-      const drop = fit(scrolled, 0.72, 0.95, 0, 1)
-      path = samplePath(outAnim, fit(drop, 0, 1, 0.79, 0.99))
-      path.p.y -= (isMobile ? 0 : 0.4) * drop * drop
+      // in-animation driven by blackTitle (cubicIn like Lusion)
+      path = samplePath(inAnim, easeCubicIn(blackTitleRatio))
     }
     instancePos.setXYZ(0, path.p.x, path.p.y, path.p.z)
     instanceOrient.setXYZW(0, path.q.x, path.q.y, path.q.z, path.q.w)
     instancePos.needsUpdate = true
     instanceOrient.needsUpdate = true
+    astronautRoot.visible = showRatio > 0.02
 
-    // camera: look into tunnel, dolly FOV like Lusion
-    camera.fov = fit(whiteTunnelRatio, 0, 1, 55, 28)
-    camera.position.set(0, 0.15, fit(whiteTunnelRatio, 0, 1, 32, 14))
-    camera.lookAt(0, 0, fit(whiteTunnelRatio, 0, 1, 18, 0))
+    // camera — black tunnel fly-through then white dolly
+    if (whiteTunnelRatio > 0.01) {
+      camera.fov = fit(whiteTunnelRatio, 0, 1, 55, 28)
+      camera.position.set(0, 0.15, fit(whiteTunnelRatio, 0, 1, 28, 12))
+      camera.lookAt(0, 0, fit(whiteTunnelRatio, 0, 1, 16, -2))
+    } else if (blackTunnelRatio > 0.01) {
+      camera.fov = fit(blackTunnelRatio, 0, 1, 50, 32)
+      camera.position.set(
+        Math.sin(blackTunnelRatio * Math.PI * 2) * 0.35,
+        0.1,
+        fit(blackTunnelRatio, 0, 1, 22, 4)
+      )
+      camera.lookAt(0, 0, camera.position.z - 18)
+    } else {
+      camera.fov = 45
+      camera.position.set(0, 0.2, 26)
+      camera.lookAt(0, 0, 14)
+    }
     camera.updateProjectionMatrix()
 
-    // title expand / scale
+    // title — Lusion: scale up hard during blackTitle, fade near end
     if (titleEl) {
-      const tr = fit(scrolled, 0.0, 0.45, 0, 1)
-      const scale = fit(tr, 0.5, 1, 1, isMobile ? 4.5 : 8)
-      const opacity = fit(tr, 0.85, 1, 1, 0) * fit(tr, 0, 0.08, 0, 1)
-      const spread = fit(tr, 0.35, 0.65, 0, 1)
+      const tr = blackTitleRatio
+      const scale = fit(easeCubicIn(fit(tr, 0.5, 1, 0, 1)), 0, 1, 1, isMobile ? 6 : 12)
+      const opacity =
+        fit(tr, 0, 0.05, 0, 1) *
+        fit(tr, 0.88, 1, 1, 0) *
+        fit(blackTunnelRatio, 0, 0.15, 1, 0)
+      const spread = easeCubicInOut(fit(tr, 0.35, 0.7, 0, 1))
+      titleEl.classList.toggle('is-on-black', toWhite < 0.5)
       titleEl.style.opacity = String(opacity)
       titleEl.style.transform = `translate3d(-50%, -50%, 0) scale(${scale})`
-      titleEl.querySelectorAll('.goal-word').forEach((word, i, arr) => {
+      titleEl.querySelectorAll('.goal-word').forEach((word) => {
         const line = word.parentElement
         const words = Array.from(line.querySelectorAll('.goal-word'))
         const idx = words.indexOf(word)
         const mid = (words.length - 1) / 2
-        const dx = (idx - mid) * 1.2 * spread
+        const dx = (idx - mid) * 1.35 * spread
         word.style.transform = `translateX(${dx}em)`
       })
       titleEl.style.visibility = opacity < 0.02 ? 'hidden' : 'visible'
     }
 
-    active = rect.bottom > 0 && rect.top < vh * 1.2
+    // body copy fades in after tunnel
+    const paras = sectionEl.querySelector('.home-goal-texts-paragraph')
+    if (paras) {
+      const pr = fit(astronautDropRatio, 0.2, 0.9, 0, 1)
+      paras.style.opacity = String(pr)
+      paras.style.transform = `translateY(${(1 - pr) * 40}px)`
+    }
+
+    active = rect.bottom > 0 && rect.top < vh * 1.15
+    sectionEl.dataset.goalPhase =
+      whiteTunnelRatio > 0.01 ? 'white' : blackTunnelRatio > 0.01 ? 'black-tunnel' : 'title'
   }
 
   const onScroll = () => updateScroll()
@@ -590,33 +664,32 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       /* allow full rate on desktop when light */
     }
 
-    // bone loop 0–89 while early; 140–287 later (Lusion)
+    // bone loop 0–89 early; 140–287 in white/out (Lusion)
     const r = whiteTunnelRatio
-    let speed = fit(showRatio, 0, 1, 0, 0.75)
+    let speed = fit(showRatio, 0, 1, 0, 0.75) * fit(blackTitleRatio, 0.2, 1, 0.35, 1)
     let loopFrom = 0
     let loopTo = 89
-    if (r >= 0.5) {
-      speed = fit(r, 0.9, 1, 0, 1)
+    if (r >= 0.5 || astronautDropRatio > 0) {
+      speed = fit(Math.max(r, astronautDropRatio), 0.85, 1, 0.2, 1)
       loopFrom = 140
       loopTo = Math.min(frameCount - 1, 287)
     }
     animationTime += dt * speed
-    const range = loopTo - loopFrom + 1
-    const E = (animationTime * 60) % range
+    const span = loopTo - loopFrom + 1
+    const E = (animationTime * 60) % span
     const I = Math.floor(E) + loopFrom
-    const F = ((Math.floor(E) + 1) % range) + loopFrom
+    const F = ((Math.floor(E) + 1) % span) + loopFrom
     const blend = E - Math.floor(E)
     blend1.setXYZ(0, I, F, blend)
     blend1.needsUpdate = true
 
-    // linear track blend into mid frames
-    const linearFrame = fit(r + showRatio, 0.9, 2, 90, 139)
+    const linearFrame = fit(r + showRatio + blackTunnelRatio * 0.25, 0.9, 2, 90, 139)
     const u = Math.floor(linearFrame)
     const f = Math.ceil(linearFrame)
     const p = linearFrame - u
     blend2.setXYZ(0, u, f, p)
     blend2.needsUpdate = true
-    sharedUniforms.u_loopLinearBlend.value = fit(r, 0.45, 0.85, 0, 0.65)
+    sharedUniforms.u_loopLinearBlend.value = fit(r, 0.35, 0.85, 0, 0.7)
 
     renderer.render(scene, camera)
   }
