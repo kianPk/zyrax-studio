@@ -391,6 +391,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       vertexShader: astronautVert,
       fragmentShader: isGlass ? glassFrag : astronautWhiteFrag,
       transparent: isGlass,
+      // Lusion: NoBlending on non-glass white (avoids transparent sort holes)
+      blending: isGlass ? THREE.NormalBlending : THREE.NoBlending,
       side: THREE.DoubleSide,
       defines: { BONE_COUNT, ...(isGlass ? { IS_HELMET_GLASS: true } : {}) },
     })
@@ -399,6 +401,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       vertexShader: astronautVert,
       fragmentShader: isGlass ? glassFrag : astronautBlackFrag,
       transparent: true,
+      blending: THREE.NoBlending,
       side: THREE.DoubleSide,
       defines: { BONE_COUNT, IS_BLACK: true },
     })
@@ -430,7 +433,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         transparent: true,
         depthWrite: false,
         depthTest: false,
-        blending: THREE.AdditiveBlending,
+        // Lusion clones: CustomBlending One/One
+        blending: THREE.CustomBlending,
+        blendEquation: THREE.AddEquation,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneFactor,
         side: THREE.DoubleSide,
         defines: { BONE_COUNT, IS_BLACK: true },
       })
@@ -537,23 +544,26 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     ig.setAttribute('instanceAxis', toFloat3Attr(structureGeo.attributes.rotAxis))
     ig.instanceCount = structureGeo.attributes.position.count
 
+    // Lusion GoalBlackTunnel: opaque NormalBlending (Additive + bloom-alpha made grid invisible)
     const mat = new THREE.ShaderMaterial({
       uniforms: blackUniforms,
       vertexShader: blackTunnelVert,
       fragmentShader: blackTunnelFrag,
       side: THREE.DoubleSide,
-      transparent: true,
-      depthWrite: !isHd,
-      // HD emissive greeble: soft additive so feedback glow builds like Lusion bloom src
-      blending: isHd ? THREE.AdditiveBlending : THREE.NormalBlending,
+      transparent: false,
+      depthWrite: true,
+      blending: THREE.NormalBlending,
       defines: { GRID_SIZE, ...(isHd ? { IS_HD: true } : {}) },
     })
     const mesh = new THREE.Mesh(ig, mat)
     mesh.frustumCulled = false
     mesh.renderOrder = isHd ? 2 : 1
     blackTunnelGroup.add(mesh)
+    if (isHd) hdGridMesh = mesh
     return mesh
   }
+
+  let hdGridMesh = null
 
   makeBlackGridMesh(gridBaseLd, gridStructureLd, false)
   if (useHd && gridBaseHd && gridStructureHd) {
@@ -1010,26 +1020,29 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cloneBlend2.needsUpdate = true
     }
 
-    // Feedback: render black tunnel into write RT while sampling previous read RT
+    // Feedback: Lusion keeps astronaut in the trail; blit at quarter-res with matching u_resolution
     if (isBlackTunnelActive) {
       const prevBg = scene.background
-      astronautRoot.visible = false
+      const prevRes = blackUniforms.u_resolution.value.clone()
       tunnelGroup.visible = false
       bgPlane.visible = false
       scene.background = new THREE.Color(0x000000)
+      // Keep astronaut visible so silhouette feeds the colorful trail (Lusion)
+      astronautRoot.visible = showRatio > 0.02
       blackUniforms.u_feedbackTexture.value = feedbackRead.texture
+      blackUniforms.u_resolution.value.set(feedbackWrite.width, feedbackWrite.height)
       renderer.setRenderTarget(feedbackWrite)
       renderer.setClearColor(0x000000, 1)
       renderer.clear()
       renderer.render(scene, camera)
       renderer.setRenderTarget(null)
-      // swap
+      blackUniforms.u_resolution.value.copy(prevRes)
       const tmp = feedbackRead
       feedbackRead = feedbackWrite
       feedbackWrite = tmp
       blackUniforms.u_feedbackTexture.value = feedbackRead.texture
+      // Mipmapped feedback ≈ Lusion dual blur for suit env
       blackAstroUniforms.u_blackTunnelTexture.value = feedbackRead.texture
-      astronautRoot.visible = showRatio > 0.02
       tunnelGroup.visible = false
       bgPlane.visible = true
       scene.background = prevBg
