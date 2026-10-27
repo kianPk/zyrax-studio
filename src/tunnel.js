@@ -20,6 +20,7 @@ import {
   astronautWhiteFrag,
   astronautBlackFrag,
 } from './tunnelShaders.js'
+import { createTunnelPost } from './tunnelPost.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
@@ -239,6 +240,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.autoClear = true
+  // Post stack created after scene/camera exist (below)
 
   matcap.colorSpace = THREE.NoColorSpace
   envMap.colorSpace = THREE.SRGBColorSpace
@@ -564,6 +566,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let baseCameraFov = EXPECTED_FOV
   // Brownian-ish motion state (Lusion astronaut shake)
   const motionPos = new THREE.Vector3()
+  const shakeTarget = new THREE.Vector3()
   const motionEuler = new THREE.Euler()
   const motionQ = new THREE.Quaternion()
   const tmpQ = new THREE.Quaternion()
@@ -611,14 +614,19 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let blackFrameInRatio = 0
   let whiteFrameBreak = 0
   let whiteFrameRatio = 0
+  let whiteTunnelWaitRatio = 0
   let astronautDropRatio = 0
   let isBlackTitleActive = true
   let isBlackTunnelActive = false
   let isWhiteTunnelActive = false
   let animationTime = 0
+  let deltaTimeMultiplier = 1
   let raf = 0
   let last = performance.now()
   let active = false
+
+  // Lusion Stage3D bloom + halo RGB-shift (chromatic rings / glow)
+  const post = createTunnelPost(renderer, scene, camera)
 
   const resize = () => {
     const parent = stickyEl
@@ -627,6 +635,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     camera.aspect = w / Math.max(h, 1)
     applyCamera()
     renderer.setSize(w, h, false)
+    post.resize(w, h)
     blackUniforms.u_resolution.value.set(w, h)
     const fw = Math.max(1, Math.floor(w * 0.25))
     const fh = Math.max(1, Math.floor(h * 0.25))
@@ -668,6 +677,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     whiteFrameBreak = ranges.range('whiteFrameBreak').ratio
     const whiteTunnelAstronautRatio = ranges.between('whiteTunnel', 'whiteFrameBreak').ratio
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
+    whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
 
     isBlackTitleActive = blackTitleRatio < 1
     isBlackTunnelActive = blackTunnelRatio < 1 && !isBlackTitleActive
@@ -679,6 +689,18 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       ? smoothstep(0, 0.15, whiteTunnelAstronautRatio)
       : 1
 
+    // Stage3D bloom / halo — exact syncProperties curves
+    post.sync({
+      blackFrameInRatio,
+      blackTitleRatio,
+      blackTunnelRatio,
+      whiteFrameRatio,
+      whiteTunnelWaitRatio,
+      astronautDropRatio,
+      isWhiteTunnelActive,
+      isBlackTunnelActive,
+    })
+
     sharedUniforms.u_whiteTunnelRatio.value = whiteTunnelRatio
     sharedUniforms.u_showRatio.value = showRatio
     sharedUniforms.u_frameOutRatio.value = whiteFrameBreak
@@ -687,7 +709,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     baseMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
     wallMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
 
-    // phase colors — pure black / white like Lusion
+    // phase colors — pure black / white like Lusion (title + black tunnel = #000)
     const bg = new THREE.Color(
       isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
     )
@@ -695,6 +717,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     scene.background = bg
     renderer.setClearColor(bg, 1)
     sharedUniforms.u_bgColor.value.copy(bg)
+    if (stickyEl) stickyEl.style.background = bg.getStyle()
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
 
@@ -722,7 +745,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       path = samplePath(inAnim, easeCubicIn(Math.min(blackTitleRatio, 1)))
     }
 
-    // Lusion BrownianMotion shake during black/white tunnel
+    // Lusion BrownianMotion (+ soft damp to mimic SecondOrderDynamics)
     let posAmp = 0
     let rotAmp = 0
     let posFreq = 0.2
@@ -739,20 +762,29 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       posAmp = fit(whiteFrameRatio, 0, 0.75, 5, 0)
       rotAmp = fit(whiteFrameRatio, 0, 0.75, 15, 0)
     }
-    motionPos.set(
+    shakeTarget.set(
       Math.sin(tunnelTime * posFreq * 5.1) * posAmp * 0.08 +
         Math.sin(tunnelTime * posFreq * 2.3) * posAmp * 0.05,
       Math.sin(tunnelTime * posFreq * 3.7 + 1.2) * posAmp * 0.08,
       Math.sin(tunnelTime * posFreq * 4.4 + 0.7) * posAmp * 0.06
     )
-    motionEuler.set(
-      (Math.sin(tunnelTime * rotFreq * 3.1) * rotAmp * Math.PI) / 180,
-      (Math.sin(tunnelTime * rotFreq * 2.4 + 0.8) * rotAmp * Math.PI) / 180,
-      (Math.sin(tunnelTime * rotFreq * 1.7 + 1.5) * rotAmp * Math.PI) / 180
-    )
+    // damp toward target (approx SecondOrderDynamics)
+    motionPos.lerp(shakeTarget, 0.12)
+    const targetEuler = {
+      x: (Math.sin(tunnelTime * rotFreq * 3.1) * rotAmp * Math.PI) / 180,
+      y: (Math.sin(tunnelTime * rotFreq * 2.4 + 0.8) * rotAmp * Math.PI) / 180,
+      z: (Math.sin(tunnelTime * rotFreq * 1.7 + 1.5) * rotAmp * Math.PI) / 180,
+    }
+    motionEuler.x += (targetEuler.x - motionEuler.x) * 0.1
+    motionEuler.y += (targetEuler.y - motionEuler.y) * 0.1
+    motionEuler.z += (targetEuler.z - motionEuler.z) * 0.1
     motionQ.setFromEuler(motionEuler)
     path.p.add(motionPos)
     tmpQ.copy(path.q).multiply(motionQ)
+    // velocity → animation speed boost (Lusion deltaTimeMultiplier)
+    const shakeMag = Math.hypot(motionPos.x, motionPos.y, motionPos.z) +
+      Math.hypot(motionEuler.x, motionEuler.y, motionEuler.z)
+    deltaTimeMultiplier = 1 + Math.min(3.5, shakeMag * 0.35)
 
     instancePos.setXYZ(0, path.p.x, path.p.y, path.p.z)
     instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
@@ -935,18 +967,22 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       applyCamera()
     }
 
-    // bone loop — Lusion updateAnimation
-    const r = whiteTunnelRatio
+    // bone loop — Lusion updateAnimation (exact speed curves)
     const drop = astronautDropRatio
-    let speed = fit(showRatio, 0, 1, 0, 0.75) * fit(blackTitleRatio, 0.2, 1, 0.35, 1)
-    let loopFrom = 0
-    let loopTo = 89
-    if (r >= 0.5 || drop > 0) {
-      speed = fit(Math.max(r, drop), 0.85, 1, 0.2, 1)
+    let speed
+    let loopFrom
+    let loopTo
+    if (drop < 0.5) {
+      // smoothstep(-0.3, 1, blackTitleRatio) * 0.75
+      speed = smoothstep(-0.3, 1, blackTitleRatio) * 0.75
+      loopFrom = 0
+      loopTo = 89
+    } else {
+      speed = fit(drop, 0.9, 1, 0, 1)
       loopFrom = 140
       loopTo = Math.min(frameCount - 1, 287)
     }
-    animationTime += dt * speed
+    animationTime += dt * speed * deltaTimeMultiplier
     const span = loopTo - loopFrom + 1
     const E = (animationTime * 60) % span
     const I = Math.floor(E) + loopFrom
@@ -1000,14 +1036,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     }
 
     renderer.setClearColor(sharedUniforms.u_bgColor.value, 1)
-    renderer.render(scene, camera)
+    post.render()
   }
   raf = requestAnimationFrame(tick)
 
   requestAnimationFrame(() => {
     resize()
     updateScroll()
-    renderer.render(scene, camera)
+    post.render()
   })
 
   return {
@@ -1019,6 +1055,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       window.removeEventListener('scroll', onScroll)
       feedbackRT.dispose()
       feedbackRT2.dispose()
+      post.destroy()
       renderer.dispose()
     },
   }

@@ -1,10 +1,11 @@
 /**
- * Port of Lusion Line drawings (line_reel / line_goal) — scroll-revealed
- * blue/cyan strokes with end-cap circle.
+ * Exact port of Lusion Line (reel + goal) — UFX PerspectiveCamera pixel mapping,
+ * diagonal scale, scroll showRatio + end-cap. Drawn under #ui so strokes pass
+ * behind DOM text (same stacking as Lusion #canvas under #ui).
  */
 import * as THREE from 'three'
 import { loadBuf } from './bufLoader.js'
-import { clamp, fit, saturate, easeQuadInOut } from './scrollMath.js'
+import { clamp, fit, saturate, easeQuadInOut, getDomRange } from './scrollMath.js'
 
 const LINES = [
   {
@@ -33,6 +34,7 @@ const LINES = [
   },
 ]
 
+// Lusion vert$j — CP ribbon extruded by u_radius in local unit space
 const lineVert = /* glsl */ `
 attribute vec3 CP;
 attribute float Cd;
@@ -136,15 +138,18 @@ function ensureLinesCanvas() {
   canvas = document.createElement('canvas')
   canvas.id = 'lines-canvas'
   canvas.setAttribute('aria-hidden', 'true')
+  // Under #ui (z-index 1) so strokes pass behind DOM text — Lusion stacking
   Object.assign(canvas.style, {
     position: 'fixed',
     inset: '0',
     width: '100%',
     height: '100%',
     pointerEvents: 'none',
-    zIndex: '4',
+    zIndex: '0',
   })
-  document.body.appendChild(canvas)
+  const ui = document.getElementById('ui')
+  if (ui && ui.parentNode) ui.parentNode.insertBefore(canvas, ui)
+  else document.body.appendChild(canvas)
   return canvas
 }
 
@@ -156,8 +161,10 @@ export async function createScrollLines() {
   )
 
   const scene = new THREE.Scene()
-  const camera = new THREE.OrthographicCamera(0, 1, 0, -1, -100, 100)
-  camera.position.z = 10
+  // Lusion Ufx PerspectiveCamera — pixel-space at z=0
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000)
+  camera.position.set(0, 0, 1)
+  camera.lookAt(0, 0, 0)
 
   let renderer
   try {
@@ -172,13 +179,14 @@ export async function createScrollLines() {
     return { update() {}, resize() {}, destroy() {} }
   }
   renderer.setClearColor(0x000000, 0)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.autoClear = true
 
   const lines = []
   const _v0 = new THREE.Vector3()
   const _v1 = new THREE.Vector3()
   const _box = new THREE.Box3()
+  const _aspect = new THREE.Vector2()
 
   for (let i = 0; i < LINES.length; i++) {
     const data = LINES[i]
@@ -208,6 +216,7 @@ export async function createScrollLines() {
     })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.frustumCulled = false
+    mesh.renderOrder = 200
     inner.add(mesh)
 
     const circleMat = new THREE.ShaderMaterial({
@@ -227,15 +236,13 @@ export async function createScrollLines() {
     })
     const circle = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), circleMat)
     circle.frustumCulled = false
+    circle.renderOrder = 200
     inner.add(circle)
 
     const posArr = geo.attributes.position.array
     const count = geo.attributes.position.count
     const lineRatioArray = new Float32Array(count)
     for (let r = 0; r < count; r++) lineRatioArray[r] = posArr[r * 3 + 2]
-
-    const cpAttr = geo.attributes.CP
-    const cdAttr = geo.attributes.Cd
 
     lines.push({
       data,
@@ -247,25 +254,36 @@ export async function createScrollLines() {
       circle,
       circleMat,
       lineRatioArray,
-      cpAttr,
-      cdAttr,
+      cpAttr: geo.attributes.CP,
+      cdAttr: geo.attributes.Cd,
       count,
       offsetY: 0,
+      // frame transform (goal only) — identity until set
+      framePos: new THREE.Vector3(),
+      frameQuat: new THREE.Quaternion(),
+      frameScale: new THREE.Vector3(1, 1, 1),
     })
   }
 
   let w = 1
   let h = 1
-  let diag = 1
 
   const resize = () => {
     w = window.innerWidth || 1
     h = window.innerHeight || 1
-    diag = Math.sqrt(w * w + h * h)
-    camera.left = 0
-    camera.right = w
-    camera.top = 0
-    camera.bottom = -h
+    // Lusion Line.resize: aspect = (w/diag, h/diag)
+    const diag = Math.sqrt(w * w + h * h)
+    const ry = h / diag
+    _aspect.set((w / h) * ry, ry)
+
+    // Lusion Ufx.setPostprocessing camera
+    camera.fov = 60
+    camera.aspect = w / h
+    camera.position.set(w / 2, -h / 2, h / (2 * Math.tan((camera.fov * Math.PI) / 360)))
+    camera.far = camera.position.z * 2
+    camera.near = camera.far / 1000
+    camera.up.set(0, 1, 0)
+    camera.lookAt(w / 2, -h / 2, 0)
     camera.updateProjectionMatrix()
     renderer.setSize(w, h, false)
   }
@@ -275,30 +293,36 @@ export async function createScrollLines() {
   const updateLine = (line) => {
     const { data, sectionEl, container, inner, mat, circle, circleMat, lineRatioArray, cpAttr, cdAttr, count } =
       line
-    const rect = sectionEl.getBoundingClientRect()
-    // Lusion screenY ≈ viewport top of section
-    const screenY = rect.top + line.offsetY
+
+    // Lusion ScrollDomRange.screenY ≡ getBoundingClientRect().top
+    const range = getDomRange(sectionEl)
+    const screenY = range.top + line.offsetY
     const vh = h
     const factors = data.scrollToRatioFactors
     let a = saturate(-(screenY - factors[0] * vh) / (factors[1] * vh))
     a = easeQuadInOut(a)
 
     const radius = 0.008 * fit(w, 540, 1920, 2, 1)
-    // Lusion: after aspect trick both scales equal the viewport diagonal
-    const scale = diag
-    inner.position.x = data.margin.x * scale
-    inner.position.y = data.margin.y * scale - screenY
-    inner.scale.set(scale, scale, 1)
+    // Lusion: scaleX = vw/aspect.x = diag, scaleY = vh/aspect.y = diag
+    const scaleX = w / _aspect.x
+    const scaleY = h / _aspect.y
+
+    inner.position.x = data.margin.x * scaleX
+    inner.position.y = data.margin.y * scaleY - screenY
+    inner.scale.set(scaleX, scaleY, 1)
 
     mat.uniforms.u_showRatio.value = a
     mat.uniforms.u_radius.value = radius
 
-    // Hide goal stroke once astronaut tunnel takes over (Lusion frames it away)
     const goalPhase = sectionEl.dataset?.goalPhase
     const hideForTunnel =
       data.id === 'goal' && (goalPhase === 'black-tunnel' || goalPhase === 'white')
 
-    // visibility via world AABB of unit box
+    // Apply optional frame transform on container (goal zoom)
+    container.position.copy(line.framePos)
+    container.quaternion.copy(line.frameQuat)
+    container.scale.copy(line.frameScale)
+
     container.updateMatrixWorld(true)
     _box.min.copy(data.boxMin)
     _box.max.copy(data.boxMax)
@@ -306,7 +330,7 @@ export async function createScrollLines() {
     container.visible =
       !hideForTunnel && _box.max.y > -h && _box.min.y < 0 && a > 0.001
 
-    // end-cap along revealed stroke
+    // End-cap at reveal tip
     let v = 0
     let blend = 0
     for (let r = 0; r < count; r++) {
@@ -338,16 +362,35 @@ export async function createScrollLines() {
     renderer.render(scene, camera)
   }
 
-  // first paint
   update()
 
   return {
     update,
     resize,
-    /** Goal section can shift line with tunnel frame offset (px). */
     setGoalOffset(px) {
       const goal = lines.find((l) => l.data.id === 'goal')
       if (goal) goal.offsetY = px || 0
+    },
+    /** Match Lusion goal frame: scale/rotate line around viewport center. */
+    setGoalFrame({ scale = 1, rotation = 0, active = false } = {}) {
+      const goal = lines.find((l) => l.data.id === 'goal')
+      if (!goal) return
+      if (!active) {
+        goal.framePos.set(0, 0, 0)
+        goal.frameQuat.identity()
+        goal.frameScale.set(1, 1, 1)
+        return
+      }
+      const cx = w * 0.5
+      const cy = -h * 0.5
+      // translate(cx,cy) * rotate(z,-rot) * scale * translate(-cx,-cy)
+      const m = new THREE.Matrix4()
+      m.makeTranslation(cx, cy, 0)
+      const mr = new THREE.Matrix4().makeRotationZ(-rotation)
+      const ms = new THREE.Matrix4().makeScale(scale, scale, 1)
+      const mt = new THREE.Matrix4().makeTranslation(-cx, -cy, 0)
+      m.multiply(mr).multiply(ms).multiply(mt)
+      m.decompose(goal.framePos, goal.frameQuat, goal.frameScale)
     },
     destroy() {
       window.removeEventListener('resize', resize)

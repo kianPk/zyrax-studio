@@ -88,7 +88,7 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       if (pinSpacer) {
         pinSpacer.style.height = shouldPin ? `${stickyEl.offsetHeight || vh}px` : '0px'
       }
-      stickyEl.style.background = toWhite > 0.5 ? '#f0f1fa' : '#0b0b12'
+      stickyEl.style.background = toWhite > 0.5 ? '#f0f1fa' : '#000000'
     }
 
     // Lusion: map blackTitle through RATIO_FROM..RATIO_TO
