@@ -166,12 +166,11 @@ void main() {
     tangentSpaceNormal.z * worldNormal
   );
   vec4 armb = texture2D(u_armbTexture, v_uv);
-  float ao = v_ao * armb.r;
+  float ao = clamp(v_ao * max(armb.r, 0.15), 0.0, 1.0);
   float roughness = armb.g;
   float metalness = armb.b;
-  float albedo = armb.a;
+  float albedo = max(armb.a, 0.12);
   vec3 N = worldNormal;
-  vec3 V = normalize(cameraPosition - v_worldPosition);
 
   vec3 viewDir = normalize(v_worldPosition);
   vec3 x = normalize(vec3(viewDir.z, 0.0, -viewDir.x));
@@ -182,20 +181,24 @@ void main() {
   float outOfFrameRatio = linearStep(0.35, 1.0, u_frameOutRatio);
   vec3 L = normalize(u_sunPosition - v_worldPosition);
   float sunNdL = saturate(dot(N, L));
-  float matcapShading = 0.5 + 0.5 * (1.0 - texture2D(u_matcapTexture, uv).r);
+  float matcapSample = texture2D(u_matcapTexture, uv).r;
+  float matcapShading = 0.35 + 0.65 * (1.0 - matcapSample);
   float metalMask = 1.0 - metalness;
 
-  vec3 color = vec3(matcapShading * albedo);
-  color += 0.8 * zAxisShading;
-  color *= u_ambientColor * (0.85 + sunNdL * 0.5);
-  color *= metalMask;
-  color += (0.5 + 0.5 * outOfFrameRatio) * metalMask * (0.5 * (0.4 + 0.2 * ao + 0.5 * sunNdL) + 0.1 * sunNdL * sunNdL);
-  color *= 0.7 + 0.3 * ao;
-  color *= 0.7 + armb.r * 0.3;
-  color += outOfFrameRatio * max(worldNormal.z * 2.0 * sunNdL, metalness)
-    * texture2D(u_envTexture, 1.2 * (uv - 0.5) + 0.5).rgb * 0.75 * v_ao;
+  // base suit albedo (grayscale map) with cooler ambient like Lusion
+  vec3 color = vec3(albedo * matcapShading);
+  color += 0.55 * zAxisShading * albedo;
+  color *= u_ambientColor * (0.75 + sunNdL * 0.55);
+  color *= metalMask * 0.92 + 0.08;
+  color += metalMask * (0.28 + 0.35 * sunNdL) * albedo;
+  color *= 0.55 + 0.45 * ao;
+  // subtle env reflection on metals / helmet edges
+  color += (0.25 + 0.75 * metalness) * texture2D(u_envTexture, uv).rgb * 0.35 * outOfFrameRatio;
+  // rim light so silhouette reads against white tunnel
+  float rim = pow(1.0 - saturate(abs(dot(N, normalize(cameraPosition - v_worldPosition)))), 2.0);
+  color += rim * 0.22 * vec3(0.75, 0.82, 0.95);
 
-  gl_FragColor.rgb = mix(u_bgColor, color, vec3(u_showRatio * 0.8 + 0.2));
+  gl_FragColor.rgb = mix(u_bgColor, color, vec3(clamp(u_showRatio, 0.15, 1.0)));
   gl_FragColor.a = 1.0;
 }
 `
@@ -303,7 +306,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     powerPreference: 'high-performance',
   })
   renderer.setClearColor(0xf0f1fa, 1)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.75))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
   renderer.outputColorSpace = THREE.SRGBColorSpace
 
   // --- load assets ---
@@ -581,9 +584,10 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     raf = requestAnimationFrame(tick)
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
-    if (!active) {
-      // still cheap-clear when offscreen
-      return
+    if (!active) return
+    // cap ~30fps when both GPU scenes exist
+    if (dt < 0.028 && !isMobile) {
+      /* allow full rate on desktop when light */
     }
 
     // bone loop 0–89 while early; 140–287 later (Lusion)

@@ -270,9 +270,10 @@ export async function createBalloonsHero(canvas, visualEl) {
     powerPreference: 'high-performance',
   })
   renderer.setClearColor(0x141515, 1)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.75))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.5))
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace
   renderer.toneMapping = THREE.NoToneMapping
+  let heroVisible = true
 
   const base = import.meta.env.BASE_URL
   const modelUrl = `${base}assets/models/home/${isMobile ? 'cross_ld' : 'cross'}.buf`
@@ -403,8 +404,20 @@ export async function createBalloonsHero(canvas, visualEl) {
   let last = performance.now()
   const start = performance.now()
 
+  const syncVisibility = () => {
+    const el = visualEl || canvas
+    const r = el.getBoundingClientRect()
+    heroVisible = r.bottom > 0 && r.top < window.innerHeight
+  }
+  window.addEventListener('scroll', syncVisibility, { passive: true })
+  syncVisibility()
+
   const tick = (now) => {
     raf = requestAnimationFrame(tick)
+    if (!heroVisible) {
+      last = now
+      return
+    }
     let dt = Math.min(0.05, (now - last) / 1000)
     last = now
     const steps = isMobile ? 1 : 2
@@ -552,6 +565,7 @@ export async function createBalloonsHero(canvas, visualEl) {
       cancelAnimationFrame(raf)
       window.removeEventListener('pointermove', onPointer)
       window.removeEventListener('resize', resize)
+      window.removeEventListener('scroll', syncVisibility)
       canvas.removeEventListener('click', onClick)
       visualEl?.removeEventListener('click', onClick)
       materials.forEach((m) => m.dispose())
