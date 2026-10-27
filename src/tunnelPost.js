@@ -350,10 +350,16 @@ export function createTunnelPost(renderer, scene, camera) {
         : 1
 
     if (isWhiteTunnelActive) {
-      // fit whiteFrame 0..05 → 4..2, or wait → 0..20
-      // Mobile: cap wait bloom so astronaut/stickers stay readable
+      // fit whiteFrame 0..05 → 4..2, or wait → bloom
+      // Delay wait bloom vs Lusion's 0..0.1 so wave + face LED read before silhouette washout
+      // Mobile: lower peak so stickers/wave silhouette stay readable
       const waitBloomPeak = isMobile ? 8 : 20
       const whiteBloomPeak = isMobile ? 2.6 : 4
+      const waitBloomT = THREE.MathUtils.clamp(
+        (whiteTunnelWaitRatio - 0.08) / 0.22,
+        0,
+        1
+      )
       bloomAmount =
         astronautDropRatio < 1
           ? THREE.MathUtils.lerp(
@@ -361,15 +367,11 @@ export function createTunnelPost(renderer, scene, camera) {
               2,
               THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1)
             )
-          : THREE.MathUtils.lerp(
-              0,
-              waitBloomPeak,
-              THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
-            )
+          : THREE.MathUtils.lerp(0, waitBloomPeak, waitBloomT)
       clearAlpha = THREE.MathUtils.lerp(
         0.3,
         0,
-        THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
+        THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.18, 0, 1)
       )
     } else {
       // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel
