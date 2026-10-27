@@ -191,6 +191,10 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       )
       stickyEl.style.opacity = String(show)
       stickyEl.style.pointerEvents = 'none'
+      // Keep Lusion light page behind the tablet (tunnel must not paint body black)
+      document.documentElement.classList.add('is-goal-window')
+      document.documentElement.style.background = ''
+      document.body.style.background = ''
 
       if (bezel) {
         // Bezel visible until expand swallows the frame
@@ -243,6 +247,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
 
     if (lastMode === 'window') {
       clearWindowed()
+      document.documentElement.classList.remove('is-goal-window')
       stickyEl.style.opacity = ''
       stickyEl.style.pointerEvents = ''
       if (imgInOuter) imgInOuter.style.visibility = 'hidden'

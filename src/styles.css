@@ -1160,27 +1160,37 @@ button {
   width: 95.7%;
   height: 70.2%;
 }
-/* Lusion: absolute over title on desktop, stacked full-width on mobile */
+/* Lusion: absolute beside tablet on desktop, stacked full-width on mobile */
 #home-goal-texts {
   position: absolute;
-  left: 0;
+  left: auto;
+  right: var(--base-padding-x);
   top: 0;
   z-index: 2;
-  grid-column: 8 / 12;
-  line-height: 1.4;
-  font-size: 1.5em;
-  width: calc((100% - var(--grid-gap) * 11) / 12 * 4 + var(--grid-gap) * 3);
-  margin-left: calc((100% - var(--grid-gap) * 11) / 12 * 7 + var(--grid-gap) * 7);
+  grid-column: 8 / 13;
+  line-height: 1.45;
+  font-size: clamp(1.05rem, 1.35vw, 1.55rem);
+  width: min(28rem, 34vw);
+  max-width: calc(100% - var(--base-padding-x) * 2);
+  margin-left: 0;
 }
 .home-goal-texts-paragraph {
   opacity: 1;
+}
+.home-goal-texts-paragraph strong {
+  font-weight: 500;
 }
 .home-goal-texts-paragraph:not(:first-child) {
   margin-top: 1em;
 }
 #home-goal-tunnel-sticky.is-windowed {
   /* Framed inside tablet — not full-bleed yet */
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
+  background: transparent !important;
+}
+html.is-goal-window,
+html.is-goal-window body {
+  background: var(--color-off-white) !important;
 }
 #home-goal-tunnel-sticky {
   /* Lenis breaks CSS sticky — pin via JS (position:fixed) while section is active */

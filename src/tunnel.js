@@ -894,9 +894,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const post = createTunnelPost(renderer, scene, camera, { isMobile })
 
   const resize = () => {
-    const parent = stickyEl
-    const w = parent.clientWidth || window.innerWidth
-    const h = parent.clientHeight || window.innerHeight
+    // Prefer the screen clip while tablet-windowed so the drawing buffer
+    // matches the visible hole (not the full device shell including bezel).
+    const clip = stickyEl?.querySelector?.('[data-goal-screen-clip]')
+    const sizeEl =
+      stickyEl?.classList.contains('is-windowed') && clip ? clip : stickyEl
+    const w = sizeEl?.clientWidth || window.innerWidth
+    const h = sizeEl?.clientHeight || window.innerHeight
     camera.aspect = w / Math.max(h, 1)
     applyCamera()
     renderer.setSize(w, h, false)
@@ -938,6 +942,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blackFrameInRatio = ranges.range('blackFrameIn').ratio
     blackTitleRatio = ranges.range('blackTitle').ratio
     blackTunnelRatio = ranges.range('blackTunnel').ratio
+    // Keep WebGL buffer in sync while the tablet frame expands
+    if (stickyEl?.classList.contains('is-windowed')) resize()
     whiteFrameRatio = ranges.range('whiteTunnel').ratio
     whiteTunnelRatio = ranges.between('whiteTunnel', 'whiteFrameOut').ratio
     whiteFrameOutRatio = ranges.range('whiteFrameOut').ratio
@@ -1056,10 +1062,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       path = samplePathByFrame(outAnim, frame, 100)
       path.p.y -= (isMobile ? 0 : 0.4) * easeBackInOut(astronautDropRatio)
     } else {
-      // M = 100 * cubicIn(blackTitleRatio)
+      // M = 100 * cubicIn(blackTitleRatio) — also ease in during tablet window
+      // so the astronaut already fills the device before blackTitle zoom.
+      const preTitle = fit(Math.max(blackFrameInRatio, 0.001), 0, 1, 0.28, 0.4)
+      const titleDrive = Math.max(blackTitleRatio, windowed ? preTitle : 0)
       path = samplePathByFrame(
         inAnim,
-        100 * easeCubicIn(Math.min(blackTitleRatio, 1)),
+        100 * easeCubicIn(Math.min(titleDrive, 1)),
         100
       )
     }
@@ -1089,15 +1098,21 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     // —— Lusion CameraControls FOV / dolly + look strength ——
     // Port GoalTunnels frameHeight→FOV: mix frame into viewport during blackFrameIn / whiteFrame
     const vhPx = window.innerHeight || 1
+    // While tablet-framed, use the on-screen clip height so the astronaut fills the device
+    const clipEl = stickyEl?.querySelector?.('[data-goal-screen-clip]')
     const frameH = Math.max(
       1,
-      stickyEl?.clientHeight || vhPx
+      (windowed && clipEl?.clientHeight) || stickyEl?.clientHeight || vhPx
     )
     const frameMix =
       blackFrameInRatio < 1
         ? blackFrameInRatio
         : 1 - whiteFrameRatio
-    const mixedFrameH = THREE.MathUtils.lerp(frameH * (isMobile ? 0.72 : 0.55), vhPx, frameMix)
+    // Window phase: oversize mixedFrameH so FOV tightens and astronaut fills the tablet
+    const frameStart = windowed
+      ? Math.max(frameH * (isMobile ? 1.35 : 1.65), vhPx * (isMobile ? 0.55 : 0.72))
+      : frameH * (isMobile ? 0.72 : 0.55)
+    const mixedFrameH = THREE.MathUtils.lerp(frameStart, vhPx, frameMix)
     const dist = DEFAULT_CAM.distanceTo(DEFAULT_LOOK)
     const expectedRad = (EXPECTED_FOV / 180) * Math.PI
     const l =
@@ -1114,7 +1129,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         smoothstep(0, 0.2, blackTunnelRatio)
       blackTunnelGroup.position.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
     } else {
-      cameraDollyZoomFovOffset = fit(blackFrameInRatio, 0, 1, isMobile ? 12 : 20, 0)
+      // Start tighter in the tablet, ease to Lusion dolly as the frame expands
+      cameraDollyZoomFovOffset = fit(
+        blackFrameInRatio,
+        0,
+        1,
+        windowed ? (isMobile ? -10 : -18) : isMobile ? 12 : 20,
+        0
+      )
       blackTunnelGroup.position.z = -80
     }
     // syncProperties cameraLookStrength
@@ -1171,7 +1193,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       ? 'white'
       : isBlackTunnelActive
         ? 'black-tunnel'
-        : 'title'
+        : blackFrameInRatio < 0.98 || stickyEl?.classList.contains('is-windowed')
+          ? 'window'
+          : 'title'
   }
 
   /** Lusion GoalBlackTunnel.update — offsetZ, show, colors, transform + efx delta */
