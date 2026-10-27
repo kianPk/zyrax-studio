@@ -1036,12 +1036,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     colorA.lerp(colorB, snap)
     blackUniforms.u_color2.value.copy(colorA)
 
-    // GoalTunnelEfx offsets from Lusion black tunnel update
+    // GoalTunnelEfx offsets from Lusion black tunnel update (amount eased in)
     post.setEfxOffset(
       efxDeltaZ * fit(blackTunnelRatio, 0, 0.2, 0, 1),
       efxDeltaZ * transformRatio * 0.01
     )
-    post.setEfxAmount(1)
+    post.setEfxAmount(fit(blackTunnelRatio, 0, 0.25, 0.35, 0.85))
 
     cameraDollyZoomFovOffset =
       Math.sin(blackTunnelRatio * 10 + tunnelTime) *

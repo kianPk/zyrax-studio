@@ -104,7 +104,8 @@ gsap.ticker.add((time) => {
   goalAutoScrollRatio = Math.max(0, Math.min(1, goalAutoScrollRatio))
   if (!goalSkipAutoScroll && goalAutoScrollRatio > 0 && Math.abs(goalAutoScrollSpeed) > 0.01) {
     const vh = window.innerHeight
-    const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio
+    // Soften vs raw Lusion 2.5 vh/s — still cinematic, less runaway
+    const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio * 0.55
     const next = (lenis.animatedScroll ?? lenis.scroll ?? window.scrollY) + deltaPx
     lenis.scrollTo(next, { immediate: true, force: true })
   }

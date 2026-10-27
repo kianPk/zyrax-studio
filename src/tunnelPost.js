@@ -92,12 +92,12 @@ uniform sampler2D u_blurTexture3;
 uniform sampler2D u_blurTexture4;
 uniform float u_bloomWeights[5];
 void main() {
-  // Soft radial warp from scroll velocity (approximates Lusion screenPaint)
+  // Soft radial warp from scroll velocity (light approx of Lusion screenPaint)
   vec2 toCenter = v_uv - 0.5;
   float paint = clamp(u_scrollPaint, 0.0, 1.0);
-  vec2 warp = toCenter * paint * 0.012;
+  vec2 warp = toCenter * paint * 0.004;
   vec2 uv = v_uv + warp;
-  vec2 rgbShift = normalize(toCenter + 1e-5) * paint * 0.0035;
+  vec2 rgbShift = normalize(toCenter + 1e-5) * paint * 0.0016;
   vec4 c = vec4(
     texture2D(u_texture, uv + rgbShift).r,
     texture2D(u_texture, uv).g,
@@ -517,9 +517,9 @@ export function createTunnelPost(renderer, scene, camera) {
       enabled = !!v
     },
     setScrollVelocity(v) {
-      // Ease toward scroll energy (Lusion screenPaint feel, lighter)
-      const target = Math.min(1, Math.abs(v) * 0.35)
-      scrollPaint += (target - scrollPaint) * 0.15
+      // Ease toward scroll energy — keep subtle so astronaut/halo stay readable
+      const target = Math.min(1, Math.abs(v) * 0.12)
+      scrollPaint += (target - scrollPaint) * 0.12
       compositeMat.uniforms.u_scrollPaint.value = scrollPaint
     },
     destroy() {
