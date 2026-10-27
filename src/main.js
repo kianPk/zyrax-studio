@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { projects } from './projects.js'
 import { createBalloonsHero } from './balloons.js'
+import { createGoalTunnel } from './tunnel.js'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -55,6 +56,22 @@ createBalloonsHero(heroCanvas, visual)
     homeHero?.classList.add('is-in')
   })
 
+// Goal tunnel + astronaut (Lusion home-goal)
+const goalSection = document.getElementById('home-goal')
+const goalCanvas = document.getElementById('goal-tunnel-canvas')
+const goalTitle = document.getElementById('home-goal-tunnel-title')
+let goalTunnel = null
+createGoalTunnel(goalCanvas, goalSection, goalTitle)
+  .then((api) => {
+    goalTunnel = api
+  })
+  .catch((err) => {
+    console.error('Goal tunnel failed', err)
+  })
+lenis.on('scroll', () => {
+  goalTunnel?.updateScroll()
+})
+
 function splitWords(el, className = 'word') {
   if (!el) return
   const text = el.textContent.trim()
@@ -95,7 +112,7 @@ document.querySelectorAll('[data-reveal]').forEach((el, i) => {
 })
 
 // Soft fade-up for text sections
-gsap.utils.toArray('#home-reel-title, #home-reel-desc, #home-featured-title, #home-goal-tunnel-title').forEach((el) => {
+gsap.utils.toArray('#home-reel-title, #home-reel-desc, #home-featured-title').forEach((el) => {
   gsap.from(el, {
     y: 48,
     opacity: 0,
@@ -103,6 +120,14 @@ gsap.utils.toArray('#home-reel-title, #home-reel-desc, #home-featured-title, #ho
     ease: 'power3.out',
     scrollTrigger: { trigger: el, start: 'top 85%' },
   })
+})
+
+gsap.from('.home-goal-texts-paragraph', {
+  y: 40,
+  opacity: 0,
+  duration: 1,
+  ease: 'power3.out',
+  scrollTrigger: { trigger: '.home-goal-texts-paragraph', start: 'top 90%' },
 })
 
 const menu = document.querySelector('[data-menu]')
