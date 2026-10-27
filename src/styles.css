@@ -367,26 +367,42 @@ button {
   transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* REEL / ABOUT */
+/* REEL / ABOUT — Lusion scale type */
 #home-reel {
   padding-top: clamp(80px, 12vw, 180px);
   padding-bottom: clamp(40px, 6vw, 80px);
 }
 #home-reel-title {
-  grid-column: 1 / span 7;
-  margin: 0;
-  font-size: clamp(2.8rem, 7.2vw, 6.8rem);
+  position: relative;
+  grid-column: 1 / span 12;
+  margin: 1em 0 0.5em;
+  font-size: 10vw;
   font-weight: 400;
-  line-height: 1.02;
+  line-height: 1;
   letter-spacing: -0.02em;
+  left: -0.03em;
+  will-change: transform;
+  overflow: hidden;
+}
+#home-reel-title-inner {
+  display: inline-block;
 }
 #home-reel-title-line-1,
 #home-reel-title-line-2 {
   display: block;
 }
+#home-reel-title-line-1 {
+  padding-left: calc(16.666% + 2vw);
+}
+#home-reel-title .scrub-word {
+  position: relative;
+  display: inline-block;
+  margin-right: 0.22em;
+  will-change: transform, opacity;
+}
 #home-reel-content {
   grid-column: 8 / span 5;
-  align-self: end;
+  align-self: start;
   padding-bottom: 0.5em;
 }
 #home-reel-desc {
@@ -398,46 +414,38 @@ button {
 #home-reel-cta {
   display: inline-flex;
   align-items: center;
-  height: 3em;
-  padding: 0 1.4em;
+  gap: 0.75em;
+  height: 3.2em;
+  padding: 0 1.25em 0 1em;
   border-radius: 6.25em;
-  border: 1.5px solid var(--color-black);
-  background: var(--color-white);
-  font-size: 0.75rem;
+  background: var(--color-grey-blue);
+  color: var(--color-white);
+  font-size: 0.8rem;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  box-shadow: 0 6px 10px #0000000a, 0 2px 4px #0000000a;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#home-reel-cta-dot {
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: currentColor;
 }
 #home-reel-cta:hover {
-  background: var(--color-black);
-  color: var(--color-white);
+  background: var(--header-color);
 }
-#home-reel-visual {
-  grid-column: 1 / span 6;
-  margin-top: 2em;
-  min-height: clamp(220px, 28vw, 380px);
+#home-reel-thumb-wrapper {
+  grid-column: 1 / span 5;
+  position: relative;
+  width: 100%;
+  margin-top: 1em;
+}
+#home-reel-thumb {
   border-radius: var(--global-border-radius);
+  padding-top: 56.25%;
   background:
     radial-gradient(circle at 40% 40%, rgba(26, 47, 251, 0.55), transparent 42%),
     linear-gradient(150deg, #dfe3f5, #1a2ffb);
-  position: relative;
-  overflow: hidden;
-}
-#home-reel-paint {
-  position: absolute;
-  inset: 20% 25%;
-  border-radius: 40% 60% 55% 45%;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(26, 47, 251, 0.35));
-  animation: float 6s ease-in-out infinite;
-}
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-6deg);
-  }
-  50% {
-    transform: translateY(-16px) rotate(5deg);
-  }
 }
 
 /* VIDEO REEL */
@@ -492,23 +500,40 @@ button {
   font-family: IBMPlexMono, monospace;
 }
 
-/* FEATURED */
+/* FEATURED — Lusion project grid */
 #home-featured {
   padding-top: clamp(70px, 10vw, 140px);
+  padding-bottom: clamp(40px, 6vw, 80px);
 }
 #home-featured-title-top {
-  grid-column: 1 / -1;
+  position: relative;
+  grid-column: 1 / span 12;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2vw;
   align-items: end;
   margin-bottom: 3em;
+  line-height: 0;
+}
+#home-featured-title-wrapper {
+  position: relative;
+  width: fit-content;
+  font-size: 8vw;
+  letter-spacing: -0.02em;
+  overflow: hidden;
 }
 #home-featured-title {
-  margin: 0;
-  font-size: clamp(2.4rem, 5.5vw, 5rem);
+  margin: 0 0 0 -0.07em;
+  padding-top: 0.5em;
+  display: inline-block;
+  font-size: 1em;
   font-weight: 400;
-  letter-spacing: -0.02em;
+  line-height: 1;
+  position: relative;
+}
+#home-featured-title .char {
+  display: inline-block;
+  will-change: transform;
 }
 #home-featured-disclaimer {
   font-size: 0.75rem;
@@ -517,26 +542,25 @@ button {
   text-transform: uppercase;
   max-width: 42ch;
   justify-self: end;
+  overflow: hidden;
+}
+#home-featured-disclaimer .line {
+  display: block;
+  will-change: transform;
 }
 .project-list {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2vw 2vw;
+  column-gap: 2vw;
 }
 .project-item {
   position: relative;
   cursor: pointer;
-  opacity: 0;
-  transform: translate3d(0, 28px, 0);
-  transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.project-item.is-in {
-  opacity: 1;
-  transform: none;
+  grid-column: span 1;
 }
 .project-item:nth-child(n + 3) {
-  margin-top: 3em;
+  margin-top: 5em;
 }
 .project-item-main {
   position: relative;
@@ -547,6 +571,10 @@ button {
   inset: 0;
   border-radius: 15px;
   overflow: hidden;
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.project-item:hover .project-item-image {
+  transform: scale(1.03);
 }
 .project-item-image span {
   position: absolute;
@@ -559,17 +587,24 @@ button {
   letter-spacing: 0.02em;
   text-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
+.project-item-footer {
+  margin-top: 1.25em;
+}
 .project-item-line-1 {
-  font-size: 0.9vw;
-  margin: 1.5em 0 1em;
+  font-size: clamp(0.65rem, 0.9vw, 0.85rem);
+  margin: 0 0 0.85em;
   text-transform: uppercase;
   font-family: IBMPlexMono, monospace;
   font-weight: 500;
+  letter-spacing: 0.02em;
 }
 .project-item-line-2 {
   font-size: 3vw;
   letter-spacing: -0.02em;
   line-height: 1;
+}
+.project-item-line-2-inner {
+  display: inline-block;
 }
 #home-featured-cta {
   grid-column: 1 / -1;
@@ -646,14 +681,22 @@ button {
   will-change: transform;
   margin: 0 0.25ch;
 }
-.home-goal-texts-paragraph {
+#home-goal-context {
   position: relative;
   z-index: 3;
-  max-width: 36rem;
+  max-width: 52rem;
   margin: 0 auto;
   padding: clamp(40px, 8vw, 120px) var(--base-padding-x) clamp(80px, 12vw, 160px);
-  opacity: 0;
   color: var(--color-black);
+}
+#home-goal-title {
+  font-size: clamp(2rem, 4.5vw, 3.8rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  margin: 0 0 1.5em;
+}
+.home-goal-texts-paragraph {
+  opacity: 0;
 }
 .home-goal-texts-paragraph p {
   font-size: clamp(1.05rem, 1.3vw, 1.25rem);
@@ -846,8 +889,23 @@ button {
   }
   #home-reel-title,
   #home-reel-content,
-  #home-reel-visual {
+  #home-reel-thumb-wrapper {
     grid-column: 1 / -1;
+  }
+  #home-reel-title {
+    font-size: 13.8vw;
+  }
+  #home-reel-title-line-1 {
+    padding-left: 0;
+  }
+  #home-featured-title-wrapper {
+    font-size: 15vw;
+  }
+  .project-item:nth-child(n + 3) {
+    margin-top: 2em;
+  }
+  .project-item-line-2 {
+    font-size: 6.5vw;
   }
   #home-goal {
     padding-bottom: calc(var(--vh, 1vh) * 900);

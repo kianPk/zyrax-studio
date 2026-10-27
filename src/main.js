@@ -33,12 +33,16 @@ if (list) {
   list.innerHTML = projects
     .map(
       (p) => `
-    <a class="project-item" href="${p.url}" target="_blank" rel="noreferrer" data-reveal>
+    <a class="project-item" href="${p.url}" target="_blank" rel="noreferrer">
       <div class="project-item-main">
         <div class="project-item-image" style="background:${p.hue}"><span>${p.title}</span></div>
       </div>
-      <div class="project-item-line-1">${p.tags}</div>
-      <div class="project-item-line-2">${p.title}</div>
+      <div class="project-item-footer">
+        <div class="project-item-line-1">${p.tags}</div>
+        <div class="project-item-line-2">
+          <div class="project-item-line-2-inner">${p.title}</div>
+        </div>
+      </div>
     </a>`
     )
     .join('')
@@ -136,91 +140,139 @@ document.querySelectorAll('[data-reveal]').forEach((el, i) => {
   })
 })
 
-// Reel / featured — scrubbed scroll reveals (closer to Lusion feel)
-const splitScrub = (el) => {
+// Lusion-like ease curve for text reveals
+const easeLusion = 'power3.out'
+
+const splitWords = (el, className = 'scrub-word') => {
   if (!el) return []
   const words = el.textContent.trim().split(/\s+/)
   el.textContent = ''
   return words.map((w) => {
     const span = document.createElement('span')
-    span.className = 'scrub-word'
+    span.className = className
     span.textContent = w
     span.style.display = 'inline-block'
-    span.style.marginRight = '0.28em'
+    span.style.transform = 'translate3d(0, 1.2em, 0)'
     span.style.opacity = '0'
-    span.style.transform = 'translate3d(0, 1.1em, 0)'
+    el.appendChild(span)
+    el.appendChild(document.createTextNode(' '))
+    return span
+  })
+}
+
+const splitChars = (el) => {
+  if (!el) return []
+  const text = el.textContent
+  el.textContent = ''
+  return [...text].map((ch) => {
+    const span = document.createElement('span')
+    span.className = 'char'
+    span.textContent = ch === ' ' ? '\u00a0' : ch
+    span.style.transform = 'translate3d(0, 1em, 0) rotate(10deg)'
     el.appendChild(span)
     return span
   })
 }
 
-const reelTitle1 = document.querySelector('#home-reel-title-line-1')
-const reelTitle2 = document.querySelector('#home-reel-title-line-2')
-;[reelTitle1, reelTitle2].forEach((line) => {
-  const words = splitScrub(line)
-  words.forEach((w, i) => {
-    gsap.to(w, {
-      y: 0,
-      opacity: 1,
-      ease: 'none',
-      scrollTrigger: {
-        trigger: '#home-reel',
-        start: `top ${80 - i * 2}%`,
-        end: `top ${55 - i * 2}%`,
-        scrub: true,
-      },
+// Bold Ideas — word rise like Lusion reel title
+;[document.querySelector('#home-reel-title-line-1'), document.querySelector('#home-reel-title-line-2')].forEach(
+  (line, lineIdx) => {
+    const words = splitWords(line)
+    words.forEach((w, i) => {
+      gsap.to(w, {
+        y: 0,
+        opacity: 1,
+        rotate: 0,
+        duration: 1.15,
+        ease: easeLusion,
+        delay: lineIdx * 0.12 + i * 0.05,
+        scrollTrigger: { trigger: '#home-reel-title', start: 'top 82%' },
+      })
     })
-  })
-})
+  }
+)
 
 gsap.from('#home-reel-desc', {
-  y: 64,
+  y: 56,
   opacity: 0,
-  ease: 'none',
-  scrollTrigger: { trigger: '#home-reel-desc', start: 'top 90%', end: 'top 55%', scrub: true },
+  duration: 1.1,
+  ease: easeLusion,
+  scrollTrigger: { trigger: '#home-reel-desc', start: 'top 88%' },
 })
 gsap.from('#home-reel-cta', {
   y: 28,
   opacity: 0,
-  ease: 'none',
-  scrollTrigger: { trigger: '#home-reel-cta', start: 'top 92%', end: 'top 70%', scrub: true },
+  duration: 0.9,
+  ease: easeLusion,
+  scrollTrigger: { trigger: '#home-reel-cta', start: 'top 90%' },
+})
+gsap.from('#home-reel-thumb', {
+  y: 80,
+  opacity: 0,
+  scale: 0.96,
+  duration: 1.2,
+  ease: easeLusion,
+  scrollTrigger: { trigger: '#home-reel-thumb', start: 'top 90%' },
 })
 gsap.from('#home-reel-video-container', {
-  scale: 0.92,
-  opacity: 0.35,
-  ease: 'none',
-  scrollTrigger: {
-    trigger: '#home-reel-video',
-    start: 'top 90%',
-    end: 'top 40%',
-    scrub: true,
-  },
+  y: 60,
+  scale: 0.94,
+  opacity: 0.4,
+  duration: 1.2,
+  ease: easeLusion,
+  scrollTrigger: { trigger: '#home-reel-video', start: 'top 85%' },
 })
-gsap.from('#home-featured-title', {
-  y: 72,
-  opacity: 0,
-  ease: 'none',
-  scrollTrigger: { trigger: '#home-featured', start: 'top 85%', end: 'top 45%', scrub: true },
+
+// Featured Work — character stagger (Lusion)
+const featuredChars = splitChars(document.getElementById('home-featured-title'))
+featuredChars.forEach((ch, i) => {
+  gsap.to(ch, {
+    y: 0,
+    rotate: 0,
+    duration: 1.05,
+    ease: easeLusion,
+    delay: i * 0.028,
+    scrollTrigger: { trigger: '#home-featured-title', start: 'top 85%' },
+  })
 })
+
+const disc = document.getElementById('home-featured-disclaimer')
+if (disc) {
+  const text = disc.textContent.trim()
+  disc.innerHTML = `<span class="line">${text}</span>`
+  gsap.from(disc.querySelector('.line'), {
+    yPercent: 100,
+    duration: 1,
+    ease: easeLusion,
+    scrollTrigger: { trigger: disc, start: 'top 88%' },
+  })
+}
+
 gsap.utils.toArray('.project-item').forEach((el, i) => {
-  gsap.fromTo(
-    el,
-    { y: 80, opacity: 0 },
-    {
-      y: 0,
-      opacity: 1,
-      ease: 'none',
-      scrollTrigger: {
-        trigger: el,
-        start: 'top 95%',
-        end: 'top 60%',
-        scrub: true,
-      },
-      delay: 0,
-    }
-  )
-  // avoid fighting CSS .is-in
-  el.classList.add('is-in')
+  gsap.from(el, {
+    y: 90,
+    opacity: 0,
+    duration: 1.15,
+    ease: easeLusion,
+    delay: (i % 2) * 0.08,
+    scrollTrigger: { trigger: el, start: 'top 92%' },
+  })
+})
+
+gsap.from('#home-featured-cta', {
+  y: 40,
+  opacity: 0,
+  duration: 1,
+  ease: easeLusion,
+  scrollTrigger: { trigger: '#home-featured-cta', start: 'top 92%' },
+})
+
+gsap.from('#home-goal-title', {
+  y: 48,
+  opacity: 0,
+  duration: 1.1,
+  ease: easeLusion,
+  scrollTrigger: { trigger: '#home-goal-title', start: 'top 88%' },
 })
 
 const menu = document.querySelector('[data-menu]')
