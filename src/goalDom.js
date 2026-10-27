@@ -59,6 +59,16 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
   computeOffsets()
   window.addEventListener('resize', computeOffsets)
 
+  // Spacer keeps layout height when sticky is position:fixed
+  let pinSpacer = null
+  if (stickyEl && stickyEl.parentElement) {
+    pinSpacer = document.createElement('div')
+    pinSpacer.setAttribute('aria-hidden', 'true')
+    pinSpacer.style.width = '100%'
+    pinSpacer.style.pointerEvents = 'none'
+    stickyEl.parentElement.insertBefore(pinSpacer, stickyEl)
+  }
+
   const updateScroll = () => {
     const blackTitleRatio = ranges.range('blackTitle').ratio
     const blackTunnelRatio = ranges.range('blackTunnel').ratio
@@ -66,6 +76,20 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     // Lusion: drop spans whiteFrameBreak → astronautDrop
     const astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     const toWhite = fit(whiteTunnelRatio, 0, 0.25, 0, 1)
+    const global = ranges.progress()
+    const vh = window.innerHeight
+
+    // Pin tunnel viewport while goal scroll range is active (Lenis-safe)
+    if (stickyEl) {
+      const sectionRect = sectionEl.getBoundingClientRect()
+      // pin while section top has reached viewport top and section still covers viewport
+      const shouldPin = sectionRect.top <= 0 && sectionRect.bottom > vh
+      stickyEl.classList.toggle('is-pinned', shouldPin)
+      if (pinSpacer) {
+        pinSpacer.style.height = shouldPin ? `${stickyEl.offsetHeight || vh}px` : '0px'
+      }
+      stickyEl.style.background = toWhite > 0.5 ? '#f0f1fa' : '#0b0b12'
+    }
 
     // Lusion: map blackTitle through RATIO_FROM..RATIO_TO
     let r = fit(blackTitleRatio, RATIO_FROM, RATIO_TO, 0, 1)
@@ -88,10 +112,6 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       const ox = word._offsetX || 0
       word.style.transform = `translateX(${spread * ox}px)`
     })
-
-    if (stickyEl) {
-      stickyEl.style.background = toWhite > 0.5 ? '#f0f1fa' : '#0b0b12'
-    }
 
     if (paras) {
       const pr = fit(astronautDropRatio, 0.15, 0.85, 0, 1)

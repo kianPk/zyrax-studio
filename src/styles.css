@@ -540,6 +540,7 @@ button {
   font-weight: 400;
   line-height: 1;
   position: relative;
+  white-space: nowrap;
 }
 #home-featured-title .word {
   display: inline-block;
@@ -656,12 +657,20 @@ button {
   min-height: calc(var(--vh, 1vh) * 100);
 }
 #home-goal-tunnel-sticky {
-  position: sticky;
+  /* Lenis breaks CSS sticky — pin via JS (position:fixed) while section is active */
+  position: relative;
   top: 0;
   height: calc(var(--vh, 1vh) * 100);
   width: 100%;
   overflow: hidden;
   background: #0b0b12;
+  z-index: 1;
+}
+#home-goal-tunnel-sticky.is-pinned {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
 }
 #goal-tunnel-canvas {
   position: absolute;
