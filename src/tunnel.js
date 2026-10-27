@@ -239,7 +239,10 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   renderer.setClearColor(0x000000, 1)
   // Mobile needs a bit more than 1x or astronaut reads as soft/grainy vs Lusion
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 1.35))
-  renderer.outputColorSpace = THREE.SRGBColorSpace
+  // Lusion Stage3D writes display-referred colors in custom shaders with no
+  // Linear→sRGB pass. Keep output linear so the entry suit isn't crushed.
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace
+  renderer.toneMapping = THREE.NoToneMapping
   renderer.autoClear = true
   // Post stack created after scene/camera exist (below)
 
@@ -420,7 +423,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       transparent: true,
       blending: THREE.NoBlending,
       side: THREE.DoubleSide,
-      defines: { BONE_COUNT, IS_BLACK: true },
+      // Glass: skip earth env on black too (same as white IS_HELMET_GLASS) so the
+      // entry visor stays the dark Lusion silhouette instead of reflecting earth.webp.
+      defines: {
+        BONE_COUNT,
+        IS_BLACK: true,
+        ...(isGlass ? { IS_HELMET_GLASS: true } : {}),
+      },
     })
     const mesh = new THREE.Mesh(ig, whiteMat)
     mesh.frustumCulled = false

@@ -299,8 +299,10 @@ ${astronautCommonBody}
   gl_FragColor.rgb = mix(gl_FragColor.rgb, 0.3 * gl_FragColor.rgb + blackTunnelColor, clamp(u_blackTunnelRatio * 2.0 - 1.0 + ao, 0.0, 1.0));
   gl_FragColor.rgb = mix(u_bgColor, gl_FragColor.rgb, vec3(u_showRatio));
   gl_FragColor.rgb *= (0.3 + armb.r * 0.7);
+#ifndef IS_HELMET_GLASS
   gl_FragColor.rgb += max(worldNormal.z * 2.0 * sunNdL, metalness)
     * texture2D(u_envTexture, 1.2 * (uv - 0.5) + vec2(0.5)).rgb * 0.75 * v_ao * (1.0 - u_blackTunnelRatio);
+#endif
   // Exact Lusion bloom alpha (NOT 1.0 — alpha drives Stage3D bloom)
   gl_FragColor.a = 0.01 + 0.1 * max(0.0, gl_FragColor.g - 1.0 + metalness * 0.2) * (0.5 + metalness * 1.5)
     + gl_FragColor.b * u_blackTunnelRatio * dot(vec3(0.299, 0.587, 0.114), blackTunnelColor) * 5.0;

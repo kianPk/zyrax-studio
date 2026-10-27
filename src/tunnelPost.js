@@ -14,10 +14,11 @@ void main() {
 }
 `
 
-/** Lusion highPassFrag — rgb * a * amount + USE_HALO ghost ring */
+/** Lusion highPassFrag — rgb * a * amount + USE_HALO + USE_CONVOLUTION zoom/mask */
 const HighPassFrag = /* glsl */ `
 uniform sampler2D u_texture;
 uniform float u_amount;
+uniform float u_convolutionBuffer;
 uniform vec2 u_texelSize;
 uniform vec2 u_aspect;
 uniform float u_haloWidth;
@@ -27,7 +28,8 @@ uniform float u_haloMaskInner;
 uniform float u_haloMaskOuter;
 varying vec2 v_uv;
 void main() {
-  vec2 uv = v_uv;
+  // Lusion USE_CONVOLUTION: slight zoom-out before sampling
+  vec2 uv = (v_uv - 0.5) * (1.0 + u_convolutionBuffer) + 0.5;
   vec4 texel = texture2D(u_texture, uv);
   float alpha = texel.a * u_amount;
   gl_FragColor = vec4(texel.rgb * alpha, 1.0);
@@ -37,7 +39,6 @@ void main() {
     vec2 ghostVec = (vec2(0.5) - ghostUv);
     vec2 direction = length(ghostVec) > 1e-5 ? normalize(ghostVec) : vec2(0.0);
     vec2 haloVec = direction * u_haloWidth;
-    // weight is computed in Lusion but unused — ring comes from bloom blur of RGB-split ghost
     // Lusion: distortion = texelSize * (haloRGBShift * screenWidth) ≈ ±haloRGBShift in UV
     vec3 distortion = vec3(-1.0, 0.0, 1.0) * u_haloRGBShift;
     float zoomBlurRatio = fract(atan(toCenter.y, toCenter.x) * 40.0) * 0.05 + 0.95;
@@ -51,6 +52,8 @@ void main() {
     halo *= u_haloStrength * smoothstep(u_haloMaskInner, u_haloMaskOuter, length(toCenter));
     gl_FragColor.rgb += halo;
   }
+  // Lusion USE_CONVOLUTION edge mask — kills bloom at zoomed borders
+  gl_FragColor.rgb *= max(abs(uv.x - 0.5), abs(uv.y - 0.5)) > 0.5 ? 0.0 : 1.0;
 }
 `
 
@@ -188,6 +191,7 @@ export function createTunnelPost(renderer, scene, camera) {
     uniforms: {
       u_texture: { value: null },
       u_amount: { value: 1 },
+      u_convolutionBuffer: { value: 0.15 },
       u_texelSize: { value: new THREE.Vector2(1, 1) },
       u_aspect: { value: new THREE.Vector2(1, 1) },
       u_haloWidth: { value: 0.6 },
@@ -284,6 +288,7 @@ export function createTunnelPost(renderer, scene, camera) {
   let haloMaskOuter = 0.5
   let clearAlpha = 0
   let enabled = true
+  let isMobileBloom = false
   let w = 1
   let h = 1
 
@@ -297,17 +302,27 @@ export function createTunnelPost(renderer, scene, camera) {
     renderer.render(quadScene, cam)
   }
 
+  const powerTwoCeiling = (n) => {
+    const v = Math.max(1, n)
+    return 1 << Math.ceil(Math.log(v) / Math.log(2))
+  }
+
   const resize = (nw, nh) => {
     w = Math.max(1, Math.floor(nw))
     h = Math.max(1, Math.floor(nh))
     sceneRT.setSize(w, h)
     efxRT.setSize(w, h)
-    highPassRT.setSize(w, h)
+    // Lusion Bloom (non-FFT path): high-pass + pyramid start at half-res
+    // Desktop Lusion uses FFT at powerTwoCeiling(half)>>1 — we keep half-res pyramid
+    // but scale weights like the FFT amount formula so bloomAmount=30 stays soft.
+    let rw = Math.max(1, Math.ceil(w / 2))
+    let rh = Math.max(1, Math.ceil(h / 2))
+    highPassRT.setSize(rw, rh)
     for (let i = 0; i < ITERATION; i++) {
-      const rw = Math.max(1, Math.floor(w / Math.pow(2, i)))
-      const rh = Math.max(1, Math.floor(h / Math.pow(2, i)))
       blurH[i].setSize(rw, rh)
       blurV[i].setSize(rw, rh)
+      rw = Math.max(1, Math.ceil(rw / 2))
+      rh = Math.max(1, Math.ceil(rh / 2))
     }
     highPassMat.uniforms.u_texelSize.value.set(1 / w, 1 / h)
     // Lusion aspect for halo: l = h/sqrt(w^2+h^2)*2
@@ -328,6 +343,7 @@ export function createTunnelPost(renderer, scene, camera) {
     isBlackTunnelActive = false,
     isMobile = false,
   } = {}) => {
+    isMobileBloom = !!isMobile
     // Exact Lusion haloStrength
     let hs =
       blackFrameInRatio *
@@ -496,11 +512,34 @@ export function createTunnelPost(renderer, scene, camera) {
       current = blurV[i]
     }
 
-    // 5) Weights — Lusion: amount * (f + (1.2 - f*2)*radius) / 2^(ITERATION-u-1)
+    // 5) Weights — Lusion desktop Bloom.USE_CONVOLUTION scales amount as
+    //   amount*1024 / powerTwoCeilingBase(fftW*fftH)^4 * 0.85  (~0.31 at 30)
+    // then FFT-convolves with a soft star kernel. Our gaussian pyramid must not
+    // feed raw amount=30 into Unreal-style weights (that washes the entry suit).
+    // Map desktop amounts through the FFT scale * soft gain so 30 ≈ gentle glow;
+    // mobile Lusion already uses the non-FFT path with raw amounts.
+    let amountForWeights = bloomAmount
+    if (!isMobileBloom) {
+      const fftW = powerTwoCeiling(w / 2) >> 1
+      const fftH = powerTwoCeiling(h / 2) >> 1
+      const fftBase = Math.max(1, Math.ceil(Math.log(fftW * fftH) / Math.log(2)))
+      const convAmount = (bloomAmount * 1024) / Math.pow(fftBase, 4) * 0.85
+      // Gaussian dissipates differently than the FFT star kernel — gain keeps a
+      // visible soft halo/glint without the blown shoulder bloom.
+      // Soft lift toward Lusion FFT bloom without the old gaussian washout.
+      amountForWeights = convAmount * 36
+    }
     for (let u = 0; u < ITERATION; u++) {
       const f = (ITERATION - u) / ITERATION
-      bloomWeights[u] =
-        bloomAmount * (f + (1.2 - f * 2) * bloomRadius) / Math.pow(2, ITERATION - u - 1)
+      let w =
+        amountForWeights *
+        (f + (1.2 - f * 2) * bloomRadius) /
+        Math.pow(2, ITERATION - u - 1)
+      // Soften the sharpest pyramid level so speculars read as Lusion's soft
+      // star glint instead of a hard rectangular blob (FFT kernel approx).
+      if (!isMobileBloom && u === 0) w *= 0.35
+      if (!isMobileBloom && u >= 3) w *= 1.25
+      bloomWeights[u] = w
     }
 
     // 6) Composite to screen
