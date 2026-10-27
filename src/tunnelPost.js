@@ -358,11 +358,11 @@ export function createTunnelPost(renderer, scene, camera) {
     // Desktop Lusion USE_CONVOLUTION FFT bloom reads as a soft chromatic ring
     // around the astronaut during blackTitle. Our gaussian path needs an
     // explicit halo lift so the entry matches that ring (exact formula starts at 0).
-    if (!isWhiteTunnelActive && !isMobile && blackFrameInRatio > 0.85 && blackTunnelRatio < 0.05) {
+    if (!isWhiteTunnelActive && !isMobile && blackFrameInRatio > 0.85 && blackTunnelRatio < 0.15) {
       const entryRing = THREE.MathUtils.lerp(
-        0.16,
-        0.1,
-        THREE.MathUtils.clamp(blackTitleRatio / 0.35, 0, 1)
+        0.22,
+        0.12,
+        THREE.MathUtils.clamp(blackTitleRatio / 0.4, 0, 1)
       )
       hs = Math.max(hs, entryRing * blackFrameInRatio)
     }
@@ -542,7 +542,7 @@ export function createTunnelPost(renderer, scene, camera) {
       // visible soft halo/glint without the blown shoulder bloom.
       // Soft lift toward Lusion FFT bloom without the old gaussian washout.
       // Slightly stronger so entry suit aura + ring read like the FFT star kernel.
-      amountForWeights = convAmount * 40
+      amountForWeights = convAmount * 48
     }
     for (let u = 0; u < ITERATION; u++) {
       const f = (ITERATION - u) / ITERATION
@@ -551,9 +551,9 @@ export function createTunnelPost(renderer, scene, camera) {
         (f + (1.2 - f * 2) * bloomRadius) /
         Math.pow(2, ITERATION - u - 1)
       // Soften sharpest mips — FFT star kernel spreads specular energy wide.
-      if (!isMobileBloom && u === 0) w *= 0.18
-      if (!isMobileBloom && u === 1) w *= 0.5
-      if (!isMobileBloom && u >= 3) w *= 1.55
+      if (!isMobileBloom && u === 0) w *= 0.15
+      if (!isMobileBloom && u === 1) w *= 0.45
+      if (!isMobileBloom && u >= 3) w *= 1.75
       bloomWeights[u] = w
     }
 

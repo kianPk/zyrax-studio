@@ -686,6 +686,9 @@ button {
   pointer-events: none;
 }
 /* WebGL UfxMesh draws project images — keep DOM slot for layout/hit-area */
+.has-featured-webgl .project-item-image {
+  background: transparent !important;
+}
 .has-featured-webgl .project-item-image img {
   opacity: 0 !important;
 }

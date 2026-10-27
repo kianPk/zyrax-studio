@@ -1,6 +1,5 @@
 /**
  * Lusion ProjectItem UfxMesh — WebGL depth-parallax cards synced to DOM.
- * home.webp + home_depth.webp with showRatio / hover focus / side slide-in.
  */
 import * as THREE from 'three'
 import { SecondOrderDynamics } from './lusionMotion.js'
@@ -10,28 +9,13 @@ const PARALLAX_SAMPLES = 12
 const BLUR_SAMPLES = 6
 
 const CardVert = /* glsl */ `
-uniform vec2 u_resolution;
-uniform vec2 u_domXY;
-uniform vec2 u_domWH;
-uniform vec3 u_meshOffset;
-uniform float u_rotZ;
 varying vec2 v_uv;
 void main() {
   v_uv = uv;
-  vec2 local = position.xy; // PlaneGeometry -0.5..0.5
-  float c = cos(u_rotZ);
-  float s = sin(u_rotZ);
-  vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 px = u_domXY + (rotated + 0.5) * u_domWH + u_meshOffset.xy;
-  vec2 ndc = vec2(
-    (px.x / u_resolution.x) * 2.0 - 1.0,
-    -(px.y / u_resolution.y) * 2.0 + 1.0
-  );
-  gl_Position = vec4(ndc, 0.0, 1.0);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `
 
-// Exact Lusion frag$l (ProjectItem) — blue-noise via hash stand-in
 const CardFrag = /* glsl */ `
 precision highp float;
 uniform sampler2D u_texture;
@@ -69,7 +53,10 @@ float getRoundedCornerMask(vec2 uv, vec2 size, float radius, float ratio) {
   radius = mix(minSize * linearStep(0., minSize, t), radius, linearStep(maxSize, maxDist, t));
   halfSize = min(halfSize, vec2(t));
   float d = sdRoundedBox((uv - 0.5) * u_domWH, halfSize, radius);
-  return smoothstep(0., 0. - fwidth(d), d);
+  // SDF: d<0 inside. Avoid smoothstep(0, -fwidth, d) — undefined when edge0>edge1
+  // on some drivers (SwiftShader) and was discarding the whole card.
+  float fw = max(fwidth(d), 0.001);
+  return 1.0 - smoothstep(-fw, fw, d);
 }
 vec3 hashNoise(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
@@ -140,7 +127,6 @@ void main() {
 }
 `
 
-/** Scalar SecondOrderDynamics — Lusion number path (zoomMotion). */
 function makeScalarDynamics(initial, f, z, r) {
   const w = Math.PI * 2 * f
   const k1 = z / (Math.PI * f)
@@ -169,12 +155,6 @@ function makeScalarDynamics(initial, f, z, r) {
       valueVel += ((target + k3 * targetVel - value - k1 * valueVel) * dt) / k2s
       return value
     },
-    reset(v = initial) {
-      value = v
-      valueVel = 0
-      prevTarget = v
-      target = v
-    },
   }
 }
 
@@ -187,20 +167,32 @@ export async function createFeaturedWebgl(projects) {
   canvas.id = 'featured-webgl-canvas'
   canvas.setAttribute('aria-hidden', 'true')
   document.body.appendChild(canvas)
-  document.documentElement.classList.add('has-featured-webgl')
 
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    alpha: true,
-    antialias: true,
-    premultipliedAlpha: false,
-  })
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+  let renderer
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: false,
+      powerPreference: 'high-performance',
+      failIfMajorPerformanceCaveat: false,
+      preserveDrawingBuffer: true,
+    })
+  } catch (err) {
+    canvas.remove()
+    console.warn('Featured WebGL unavailable', err)
+    return { update() {}, resize() {}, destroy() {} }
+  }
+  document.documentElement.classList.add('has-featured-webgl')
+  renderer.setPixelRatio(1)
   renderer.setClearColor(0x000000, 0)
   renderer.outputColorSpace = THREE.SRGBColorSpace
 
   const scene = new THREE.Scene()
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  // Pixel-space ortho (y-up): flip DOM top → camera y
+  const camera = new THREE.OrthographicCamera(0, 1, 1, 0, -1000, 1000)
+  camera.position.z = 10
 
   const loader = new THREE.TextureLoader()
   const base = `${import.meta.env.BASE_URL}assets/projects/`
@@ -211,6 +203,7 @@ export async function createFeaturedWebgl(projects) {
   }
   window.addEventListener('pointermove', onMove, { passive: true })
 
+  const sharedGeo = new THREE.PlaneGeometry(1, 1)
   const items = []
   const domItems = Array.from(list.querySelectorAll('.project-item'))
 
@@ -239,6 +232,9 @@ export async function createFeaturedWebgl(projects) {
       }
       colorMap.colorSpace = THREE.SRGBColorSpace
       colorMap.wrapS = colorMap.wrapT = THREE.ClampToEdgeWrapping
+      colorMap.minFilter = THREE.LinearFilter
+      colorMap.magFilter = THREE.LinearFilter
+      colorMap.generateMipmaps = false
       depthMap.colorSpace = THREE.NoColorSpace
       depthMap.wrapS = depthMap.wrapT = THREE.ClampToEdgeWrapping
       depthMap.minFilter = THREE.LinearFilter
@@ -251,7 +247,6 @@ export async function createFeaturedWebgl(projects) {
       )
       const focusPos = new THREE.Vector3(0, 0, -1)
       const focusDyn = new SecondOrderDynamics(new THREE.Vector3(), 1, 0.6, 2)
-      // Lusion: zoomMotion starts at 1, eases to 0
       const zoomDyn = makeScalarDynamics(1, 2.2, 0.7, 3)
       zoomDyn.target = 0
       const shiftXY = new THREE.Vector2()
@@ -265,7 +260,6 @@ export async function createFeaturedWebgl(projects) {
         u_activeRatio: { value: 0 },
         u_textureSize: { value: texSize },
         u_domWH: { value: new THREE.Vector2(1, 1) },
-        u_domXY: { value: new THREE.Vector2(0, 0) },
         u_shiftXY: { value: shiftXY },
         u_focusPos: { value: focusPos },
         u_zoomRatio: { value: 1 },
@@ -276,8 +270,6 @@ export async function createFeaturedWebgl(projects) {
         u_resolution: { value: new THREE.Vector2(1, 1) },
         u_globalRadius: { value: 15 },
         u_time: { value: 0 },
-        u_meshOffset: { value: new THREE.Vector3() },
-        u_rotZ: { value: 0 },
       }
 
       const mat = new THREE.ShaderMaterial({
@@ -287,8 +279,9 @@ export async function createFeaturedWebgl(projects) {
         transparent: true,
         depthTest: false,
         depthWrite: false,
+        toneMapped: false,
       })
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+      const mesh = new THREE.Mesh(sharedGeo, mat)
       mesh.frustumCulled = false
       mesh.renderOrder = 10 + index
       mesh.visible = false
@@ -327,7 +320,7 @@ export async function createFeaturedWebgl(projects) {
         update(dt, vw, vh, time, scrollStrength) {
           const range = getDomRange(dom)
           const inView = range.ratio > -1 && range.ratio < 1
-          if (!inView) {
+          if (!inView || !main) {
             showTime = 0
             mesh.visible = false
             uniforms.u_showRatio.value = 0
@@ -336,18 +329,28 @@ export async function createFeaturedWebgl(projects) {
           showTime += dt
 
           const rect = main.getBoundingClientRect()
-          uniforms.u_domXY.value.set(rect.left, rect.top)
-          uniforms.u_domWH.value.set(Math.max(1, rect.width), Math.max(1, rect.height))
+          const w = Math.max(1, rect.width)
+          const h = Math.max(1, rect.height)
+          uniforms.u_domWH.value.set(w, h)
           uniforms.u_resolution.value.set(vw, vh)
           uniforms.u_time.value = time
           uniforms.u_rippleStrength.value = Math.min(0.15, scrollStrength * 0.5)
-          uniforms.u_globalRadius.value = Math.min(rect.width, rect.height) * 0.04
+          uniforms.u_globalRadius.value = Math.min(w, h) * 0.04
 
-          // Lusion enter: slide from sides + rotate
+          // Enter: slide from sides + slight rotate (Lusion)
           const C = fit(showTime, 0, 2, 0, 1, easeExpoOut)
           const side = index % 2 - 0.5
-          uniforms.u_meshOffset.value.set((1 - C) * side * -vw * 0.1, 0, 0)
-          uniforms.u_rotZ.value = (1 - C) * side * 0.1
+          const slideX = (1 - C) * side * -vw * 0.1
+          const rotZ = (1 - C) * side * 0.1
+
+          // Pixel-space plane centered on DOM rect (camera y-up)
+          mesh.position.set(
+            rect.left + w * 0.5 + slideX,
+            vh - (rect.top + h * 0.5),
+            0
+          )
+          mesh.scale.set(w, h, 1)
+          mesh.rotation.z = -rotZ
 
           const b = fit(showTime, 0, 1.5, 0, 1, easeExpoOut)
           uniforms.u_showRatio.value = b
@@ -356,9 +359,9 @@ export async function createFeaturedWebgl(projects) {
           const prevHover = hoverRatio
           hoverRatio = clamp(hoverRatio + (isHover ? 1 : -1) * dt, 0, 1)
           if (prevHover < hoverRatio) {
-            const w = findThreshold(prevHover)
+            const a = findThreshold(prevHover)
             const R = findThreshold(hoverRatio)
-            if (R !== w) {
+            if (R !== a) {
               shiftXYTarget
                 .set(Math.random() - 0.5, Math.random() - 0.5)
                 .normalize()
@@ -372,16 +375,9 @@ export async function createFeaturedWebgl(projects) {
 
           const T = focusDyn.target
           if (isHover) {
-            const g = rect.width
-            const v = rect.height
-            const f = rect.left
-            const p = rect.top
-            const c = mouse.x
-            const u = mouse.y
-            const R = hoverRatio > 0 ? fit(hoverRatio, 0, 0.3, 1, 0) * v * 0.75 : 0
-            const w = 1
-            T.x = ((c - f - g * 0.5 + Math.cos(time * 20) * R) / g) * -v * w
-            T.y = ((u - p - v * 0.5 - Math.sin(time * 30) * R) / v) * v * w
+            const R = hoverRatio > 0 ? fit(hoverRatio, 0, 0.3, 1, 0) * h * 0.75 : 0
+            T.x = ((mouse.x - rect.left - w * 0.5 + Math.cos(time * 20) * R) / w) * -h
+            T.y = ((mouse.y - rect.top - h * 0.5 - Math.sin(time * 30) * R) / h) * h
             T.z = 0.5
           } else {
             T.x = 0
@@ -415,6 +411,11 @@ export async function createFeaturedWebgl(projects) {
     w = window.innerWidth
     h = window.innerHeight
     renderer.setSize(w, h, false)
+    camera.left = 0
+    camera.right = w
+    camera.top = h
+    camera.bottom = 0
+    camera.updateProjectionMatrix()
   }
   resize()
   window.addEventListener('resize', resize)
@@ -439,9 +440,9 @@ export async function createFeaturedWebgl(projects) {
       window.removeEventListener('resize', resize)
       document.documentElement.classList.remove('has-featured-webgl')
       items.forEach((it) => {
-        it.mesh.geometry.dispose()
         it.mesh.material.dispose()
       })
+      sharedGeo.dispose()
       renderer.dispose()
       canvas.remove()
     },
