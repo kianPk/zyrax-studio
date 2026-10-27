@@ -252,10 +252,13 @@ ${astronautCommonBody}
   blackTunnelColor += exp(-sdf * 0.25) * blackTunnelEnvDiff * 2.0;
   gl_FragColor.rgb = color;
   gl_FragColor.rgb = mix(gl_FragColor.rgb, 0.3 * gl_FragColor.rgb + blackTunnelColor, clamp(u_blackTunnelRatio * 2.0 - 1.0 + ao, 0.0, 1.0));
-  gl_FragColor.rgb = mix(u_bgColor, gl_FragColor.rgb, vec3(u_showRatio));
-  gl_FragColor.rgb *= (0.3 + armb.r * 0.7);
+  // Keep suit readable against pure black (Lusion never fully silhouettes the hero)
+  gl_FragColor.rgb = max(gl_FragColor.rgb, vec3(0.04 + 0.08 * albedo));
+  gl_FragColor.rgb = mix(u_bgColor, gl_FragColor.rgb, vec3(max(u_showRatio, 0.85)));
+  gl_FragColor.rgb *= (0.45 + armb.r * 0.7);
   gl_FragColor.rgb += max(worldNormal.z * 2.0 * sunNdL, metalness)
     * texture2D(u_envTexture, 1.2 * (uv - 0.5) + vec2(0.5)).rgb * 0.75 * v_ao * (1.0 - u_blackTunnelRatio);
+  gl_FragColor.rgb += blackTunnelEnvDiff * (0.35 + u_blackTunnelRatio * 0.9) * ao;
   gl_FragColor.a = 1.0;
   gl_FragColor.a *= mix(1.0, 1.0 - u_endRatio, 0.35);
 }

@@ -571,6 +571,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const colorB = new THREE.Color()
   const camForward = new THREE.Vector3()
   const camTmp = new THREE.Vector3()
+  const cloneEuler = new THREE.Euler()
+  const cloneQuat = new THREE.Quaternion()
 
   /** Port of Lusion CameraControls dolly-zoom (FOV stays base; distance shifts). */
   const applyCamera = () => {
@@ -772,14 +774,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
           path.p.y + oy * (1 - fade * 0.35),
           path.p.z + oz * (1 - fade * 0.35)
         )
-        // slight rotation jitter
-        const e = new THREE.Euler(
+        cloneEuler.set(
           motionEuler.x + Math.sin(t) * 0.4,
           motionEuler.y + Math.cos(t * 1.2) * 0.4,
           motionEuler.z + Math.sin(t * 0.8) * 0.3
         )
-        const cq = new THREE.Quaternion().setFromEuler(e).multiply(tmpQ)
-        cloneOrient.setXYZW(i, cq.x, cq.y, cq.z, cq.w)
+        cloneQuat.setFromEuler(cloneEuler).multiply(tmpQ)
+        cloneOrient.setXYZW(i, cloneQuat.x, cloneQuat.y, cloneQuat.z, cloneQuat.w)
         cloneBlend1.setXYZ(i, blend1.getX(0), blend1.getY(0), blend1.getZ(0))
         cloneBlend2.setXYZ(i, blend2.getX(0), blend2.getY(0), blend2.getZ(0))
       }
