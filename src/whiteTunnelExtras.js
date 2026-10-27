@@ -37,6 +37,8 @@ const STICKER_DATA = [
 
 const STICKER_COUNT = 26
 const PARTICLE_COUNT = 64
+// Slightly denser on phone so the wait finale fills the portrait frame
+const MOBILE_STICKER_COUNT = 34
 const TEX_SIZE = new THREE.Vector2(1465, 1024)
 
 const stickerVert = /* glsl */ `
@@ -226,6 +228,7 @@ function seededRandom(seed) {
 export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTime }) {
   // Prefer full stickers atlas even on phone — low atlas looks muddy at wait bloom
   const stickerFile = 'stickers.png'
+  const stickerCount = isMobile ? MOBILE_STICKER_COUNT : STICKER_COUNT
   const [stickerTex, diamondGeo] = await Promise.all([
     new THREE.TextureLoader().loadAsync(`${base}assets/textures/tunnels/${stickerFile}`),
     loadBuf(`${base}assets/models/tunnels/diamond.buf`),
@@ -242,11 +245,11 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
   const stickerIg = new THREE.InstancedBufferGeometry()
   for (const key in plane.attributes) stickerIg.setAttribute(key, plane.attributes[key])
   stickerIg.index = plane.index
-  const ids = new Float32Array(STICKER_COUNT)
-  const uvInfo = new Float32Array(STICKER_COUNT * 4)
-  const rands = new Float32Array(STICKER_COUNT * 4)
-  for (let i = 0, u = 0; i < STICKER_COUNT; i++, u += 4) {
-    ids[i] = i / STICKER_COUNT
+  const ids = new Float32Array(stickerCount)
+  const uvInfo = new Float32Array(stickerCount * 4)
+  const rands = new Float32Array(stickerCount * 4)
+  for (let i = 0, u = 0; i < stickerCount; i++, u += 4) {
+    ids[i] = i / stickerCount
     const f = STICKER_DATA[i % STICKER_DATA.length]
     uvInfo[u] = f.x / TEX_SIZE.x
     uvInfo[u + 1] = f.y / TEX_SIZE.y
@@ -260,7 +263,7 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
   stickerIg.setAttribute('instanceId', new THREE.InstancedBufferAttribute(ids, 1))
   stickerIg.setAttribute('instanceUvInfo', new THREE.InstancedBufferAttribute(uvInfo, 4))
   stickerIg.setAttribute('instanceRands', new THREE.InstancedBufferAttribute(rands, 4))
-  stickerIg.instanceCount = STICKER_COUNT
+  stickerIg.instanceCount = stickerCount
 
   const stickerMat = new THREE.ShaderMaterial({
     vertexShader: stickerVert,
@@ -282,7 +285,7 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
     blendEquationAlpha: THREE.AddEquation,
     blendSrcAlpha: THREE.ZeroFactor,
     blendDstAlpha: THREE.ZeroFactor,
-    defines: { COUNT: STICKER_COUNT },
+    defines: { COUNT: stickerCount },
   })
   const stickerMesh = new THREE.Mesh(stickerIg, stickerMat)
   stickerMesh.frustumCulled = false

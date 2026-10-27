@@ -1133,9 +1133,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
     const bgHex =
       isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
+    // Portrait camera.aspect (~0.46) blows sticker yLimit off-screen — clamp like a landscape frustum
+    const extrasAspect = isMobile
+      ? Math.max(camera.aspect, 0.95)
+      : Math.max(camera.aspect, 0.01)
     whiteExtras.update({
       whiteTunnelWaitRatio,
-      aspect: Math.max(camera.aspect, 0.01),
+      aspect: extrasAspect,
       bg: bgHex,
     })
   }
