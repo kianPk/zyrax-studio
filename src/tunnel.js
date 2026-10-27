@@ -615,24 +615,32 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     instanceOrient.needsUpdate = true
     astronautRoot.visible = showRatio > 0.02
 
-    // camera — black tunnel fly-through then white dolly
+    // camera — track astronaut on path (Lusion keeps subject framed)
     if (isWhiteTunnelActive) {
-      camera.fov = fit(whiteTunnelRatio, 0, 1, 55, 28)
-      camera.position.set(0, 0.15, fit(whiteTunnelRatio, 0, 1, 28, 12))
-      camera.lookAt(0, 0, fit(whiteTunnelRatio, 0, 1, 16, -2))
+      const dropT = Math.max(whiteTunnelRatio, astronautDropRatio)
+      camera.fov = fit(dropT, 0, 1, 55, 32)
+      // sit behind astronaut along path, look toward them
+      const camZ = path.p.z + fit(dropT, 0, 1, 14, 8)
+      const camY = path.p.y + fit(astronautDropRatio, 0, 1, 0.2, 1.2)
+      camera.position.set(path.p.x * 0.15, camY, camZ)
+      camera.lookAt(path.p.x, path.p.y + 0.3, path.p.z)
     } else if (isBlackTunnelActive) {
       camera.fov = fit(blackTunnelRatio, 0, 1, 50, 32)
       camera.position.set(
-        Math.sin(blackTunnelRatio * Math.PI * 2) * 0.35,
-        0.1,
-        fit(blackTunnelRatio, 0, 1, 22, 4)
+        path.p.x + Math.sin(blackTunnelRatio * Math.PI * 2) * 0.35,
+        path.p.y + 0.35,
+        path.p.z + fit(blackTunnelRatio, 0, 1, 16, 6)
       )
-      camera.lookAt(0, 0, camera.position.z - 18)
+      camera.lookAt(path.p.x, path.p.y + 0.2, path.p.z)
     } else {
-      // black title — slight pull from blackFrameIn
+      // black title — frame in-anim astronaut
       camera.fov = fit(blackFrameInRatio, 0, 1, 42, 45)
-      camera.position.set(0, 0.2, fit(blackFrameInRatio, 0, 1, 30, 26))
-      camera.lookAt(0, 0, 14)
+      camera.position.set(
+        path.p.x * 0.2,
+        path.p.y + 0.4,
+        path.p.z + fit(blackFrameInRatio, 0, 1, 18, 12)
+      )
+      camera.lookAt(path.p.x, path.p.y + 0.2, path.p.z)
     }
     camera.updateProjectionMatrix()
 

@@ -1,6 +1,6 @@
 /**
- * Lusion-style continuous scroll-time text reveals.
- * Uses _time / _animating + math.fit(..., ease.lusion) — not one-shot GSAP.
+ * Faithful port of Lusion HomeReelSection + HomeFeaturedSection scroll text.
+ * SplitType-compatible DOM (div.word / div.char) + continuous _time with ease.lusion.
  */
 import {
   clamp,
@@ -11,57 +11,51 @@ import {
   getDomRange,
 } from './scrollMath.js'
 
-function splitWords(el, className = 'scrub-word') {
+/** SplitType-like: wrap words as display:inline-block DIVs, keep spaces */
+function splitWords(el, className = 'word') {
   if (!el) return []
-  const text = el.textContent.trim()
-  const words = text.split(/\s+/)
+  const text = el.textContent.replace(/\s+/g, ' ').trim()
   el.textContent = ''
-  return words.map((w) => {
-    const span = document.createElement('span')
-    span.className = className
-    span.textContent = w
-    span.style.display = 'inline-block'
-    span.style.willChange = 'transform, opacity'
-    el.appendChild(span)
-    el.appendChild(document.createTextNode(' '))
-    return span
+  const words = text.split(' ')
+  const out = []
+  words.forEach((w, i) => {
+    const div = document.createElement('div')
+    div.className = className
+    div.textContent = w
+    div.style.display = 'inline-block'
+    div.style.willChange = 'transform'
+    el.appendChild(div)
+    out.push(div)
+    if (i < words.length - 1) el.appendChild(document.createTextNode(' '))
   })
+  return out
 }
 
-function splitChars(el) {
+/** SplitType words+chars — div.word > div.char */
+function splitWordsChars(el) {
   if (!el) return []
-  const text = el.textContent
+  const text = el.textContent.replace(/\s+/g, ' ').trim()
   el.textContent = ''
-  // wrap words then chars (Lusion SplitType words, chars)
-  const words = text.split(/(\s+)/)
   const chars = []
-  words.forEach((part) => {
-    if (/^\s+$/.test(part)) {
-      el.appendChild(document.createTextNode(part))
-      return
-    }
-    const word = document.createElement('span')
+  text.split(' ').forEach((w, wi, arr) => {
+    const word = document.createElement('div')
     word.className = 'word'
     word.style.display = 'inline-block'
-    ;[...part].forEach((ch) => {
-      const span = document.createElement('span')
-      span.className = 'char'
-      span.textContent = ch
-      span.style.display = 'inline-block'
-      span.style.willChange = 'transform'
-      span.style.transform = 'translate3d(0, 1em, 0) rotate(10deg)'
-      word.appendChild(span)
-      chars.push(span)
+    ;[...w].forEach((ch) => {
+      const c = document.createElement('div')
+      c.className = 'char'
+      c.textContent = ch
+      c.style.display = 'inline-block'
+      c.style.position = 'relative'
+      c.style.willChange = 'transform'
+      c.style.transform = 'translate3d(0, 1em, 0) rotate(10deg)'
+      word.appendChild(c)
+      chars.push(c)
     })
     el.appendChild(word)
+    if (wi < arr.length - 1) el.appendChild(document.createTextNode(' '))
   })
   return chars
-}
-
-function wrapOverflowLine(el) {
-  if (!el) return el
-  el.style.overflow = 'hidden'
-  return el
 }
 
 function makeTimed(el, max = 2) {
@@ -72,14 +66,10 @@ function makeTimed(el, max = 2) {
   return el
 }
 
-/**
- * Bind Bold Ideas / Featured Work (and related) continuous scroll reveals.
- * Call update(dt) every frame from the Lenis/gsap ticker.
- */
 export function bindLusionScrollText() {
   const useMobile = () => window.innerWidth < 812
 
-  // —— REEL TITLE: "Bold Ideas," + "Brought to Life" ——
+  // —— REEL (HomeReelSection) ——
   const reelSection = document.getElementById('home-reel')
   const reelTitle = makeTimed(document.getElementById('home-reel-title'), 2)
   const reelTitleInner = document.getElementById('home-reel-title-inner')
@@ -94,40 +84,62 @@ export function bindLusionScrollText() {
     document.querySelectorAll('.home-reel-video-container-cross')
   )
 
-  // Split title words across both lines (global word index like Lusion SplitType on #home-reel-title)
   let titleWords = []
   let paddingLeft = 0
   let descWords = []
+  let reelNeedsReset = true
 
-  const splitReel = () => {
-    if (!reelTitleLine1 || !reelTitleLine2) return
-    wrapOverflowLine(reelTitleLine1)
-    wrapOverflowLine(reelTitleLine2)
-    titleWords = [...splitWords(reelTitleLine1), ...splitWords(reelTitleLine2)]
-    titleWords.forEach((w, i) => {
-      // initial: first two from below, rest from above
-      w.style.transform = i < 2 ? 'translate3d(0, 100%, 0)' : 'translate3d(0, -100%, 0)'
-      w.style.opacity = '1'
+  const resetReelWords = () => {
+    // Lusion _reset: all title words start at Y 100%
+    titleWords.forEach((w) => {
+      w.style.transform = 'translate3d(0, 100%, 0)'
     })
-    paddingLeft = parseFloat(getComputedStyle(reelTitleLine1).paddingLeft) || 0
-
-    if (reelDesc) {
-      descWords = splitWords(reelDesc, 'desc-word')
-      descWords.forEach((w) => {
-        w.style.transform = 'translate3d(0, 100%, 0)'
-        w.style.opacity = '0'
-      })
-    }
+    descWords.forEach((w) => {
+      w.style.transform = 'translate3d(0, 100%, 0)'
+      w.style.opacity = '0'
+    })
     if (reelCta) {
       reelCta.style.transform = 'translate3d(0, 150%, 0) rotate(10deg)'
       reelCta.style.opacity = '0'
       reelCta._ratio = 0
       reelCta._animating = false
     }
+    if (reelTitle) {
+      reelTitle._time = 0
+      reelTitle._animating = false
+    }
+    if (reelDesc) {
+      reelDesc._time = 0
+      reelDesc._animating = false
+    }
+  }
+
+  const splitReel = () => {
+    if (!reelTitleLine1 || !reelTitleLine2) return
+    // Lusion: #home-reel-title-inner > div { overflow:hidden }
+    ;[reelTitleLine1, reelTitleLine2].forEach((line) => {
+      line.style.overflow = 'hidden'
+      line.style.display = 'block'
+      line.style.position = 'relative'
+    })
+    // SplitType on titleInner → words across both lines, global index
+    titleWords = [...splitWords(reelTitleLine1, 'word'), ...splitWords(reelTitleLine2, 'word')]
+    titleWords.forEach((w) => {
+      w.style.position = 'relative'
+      w.style.bottom = '0.1em'
+    })
+    paddingLeft = parseFloat(getComputedStyle(reelTitleLine1).paddingLeft) || 0
+
+    if (reelDesc) {
+      descWords = splitWords(reelDesc, 'word')
+      // overflow clip for rising words
+      reelDesc.style.overflow = 'hidden'
+    }
+    resetReelWords()
   }
   splitReel()
 
-  // —— FEATURED ——
+  // —— FEATURED (HomeFeaturedSection) ——
   const featuredSection = document.getElementById('home-featured')
   const featuredTitle = makeTimed(document.getElementById('home-featured-title'), 2)
   const featuredDisclaimer = makeTimed(document.getElementById('home-featured-disclaimer'), 2)
@@ -136,60 +148,6 @@ export function bindLusionScrollText() {
   let disclaimerLines = []
   let projectItems = []
   let featuredNeedsReset = true
-
-  const splitFeatured = () => {
-    if (!featuredTitle) return
-    wrapOverflowLine(featuredTitle.parentElement || featuredTitle)
-    featuredChars = splitChars(featuredTitle)
-    featuredChars.forEach((c) => {
-      c.style.transform = 'translate3d(0, 1em, 0) rotate(10deg)'
-    })
-
-    if (featuredDisclaimer) {
-      const text = featuredDisclaimer.textContent.trim()
-      featuredDisclaimer.textContent = ''
-      const line = document.createElement('div')
-      line.className = 'line'
-      line.textContent = text
-      line.style.transform = 'translate3d(0, 100%, 0)'
-      const wrap = document.createElement('div')
-      wrap.style.position = 'relative'
-      wrap.style.overflow = 'hidden'
-      wrap.appendChild(line)
-      featuredDisclaimer.appendChild(wrap)
-      disclaimerLines = [line]
-    }
-    if (featuredCta) {
-      featuredCta.style.transform = 'translate3d(0, 150%, 0) rotate(10deg)'
-      featuredCta.style.opacity = '0'
-    }
-
-    projectItems = Array.from(document.querySelectorAll('.project-item')).map((el, i) => {
-      el._time = 0
-      el._animating = false
-      el.style.transform = 'translate3d(0, 90px, 0)'
-      el.style.opacity = '0'
-      el.style.willChange = 'transform, opacity'
-      el.dataset.projectIndex = String(i)
-      return el
-    })
-  }
-  splitFeatured()
-
-  // —— GOAL context title ——
-  const goalTitle = makeTimed(document.getElementById('home-goal-title'), 2)
-  let goalTitleWords = []
-  if (goalTitle) {
-    goalTitleWords = splitWords(goalTitle, 'goal-ctx-word')
-    goalTitleWords.forEach((w) => {
-      w.style.transform = 'translate3d(0, 100%, 0)'
-      w.style.opacity = '0'
-    })
-  }
-
-  let videoCrossTime = 0
-  let videoCrossAnimating = false
-  let videoShowRatio = 0
 
   const resetFeatured = () => {
     featuredNeedsReset = false
@@ -209,25 +167,88 @@ export function bindLusionScrollText() {
       disclaimerLines.forEach((l) => {
         l.style.transform = 'translate3d(0, 100%, 0)'
       })
+      // Lusion reset uses 100%; update drives em — start hidden below
       featuredChars.forEach((c) => {
-        c.style.transform = 'translate3d(0, 1em, 0) rotate(10deg)'
+        c.style.transform = 'translate3d(0, 100%, 0)'
       })
     }
   }
 
+  const splitFeatured = () => {
+    if (!featuredTitle) return
+    featuredTitle.style.overflow = 'hidden'
+    featuredChars = splitWordsChars(featuredTitle)
+
+    if (featuredDisclaimer) {
+      const text = featuredDisclaimer.textContent.trim()
+      featuredDisclaimer.textContent = ''
+      const line = document.createElement('div')
+      line.className = 'line'
+      line.textContent = text
+      line.style.transform = 'translate3d(0, 100%, 0)'
+      line.style.willChange = 'transform'
+      const wrap = document.createElement('div')
+      wrap.style.position = 'relative'
+      wrap.style.overflow = 'hidden'
+      wrap.appendChild(line)
+      featuredDisclaimer.appendChild(wrap)
+      disclaimerLines = [line]
+    }
+    if (featuredCta) {
+      featuredCta.style.transform = 'translate3d(0, 150%, 0) rotate(10deg)'
+      featuredCta.style.opacity = '0'
+      featuredCta.style.overflow = 'hidden'
+    }
+
+    projectItems = Array.from(document.querySelectorAll('.project-item')).map((el, i) => {
+      el._time = 0
+      el._animating = false
+      el.style.opacity = '0'
+      el.style.transform = 'translate3d(0, 90px, 0)'
+      el.style.willChange = 'transform, opacity'
+      el.dataset.projectIndex = String(i)
+      return el
+    })
+    resetFeatured()
+  }
+  splitFeatured()
+
+  // —— GOAL context title (scroll-time words) ——
+  const goalTitle = makeTimed(document.getElementById('home-goal-title'), 2)
+  let goalTitleWords = []
+  if (goalTitle) {
+    goalTitle.style.overflow = 'hidden'
+    goalTitleWords = splitWords(goalTitle, 'word')
+    goalTitleWords.forEach((w) => {
+      w.style.transform = 'translate3d(0, 100%, 0)'
+      w.style.opacity = '0'
+    })
+  }
+
+  let videoCrossTime = 0
+  let videoCrossAnimating = false
+  let videoShowRatio = 0
+
   const updateReel = (dt) => {
-    if (!reelTitle) return
+    if (!reelTitle || !reelSection) return
+    const sectionRange = getDomRange(reelSection)
+
+    if (!sectionRange.isActive) {
+      reelNeedsReset = true
+      return
+    }
+    if (reelNeedsReset) {
+      reelNeedsReset = false
+      resetReelWords()
+    }
+
     const titleRange = getDomRange(reelTitle)
     const contentRange = getDomRange(reelContent || reelDesc)
     const vh = window.innerHeight
     const parallaxUnit = vh * 0.1
 
-    // advance / rewind time
-    reelTitle._time = clamp(
-      reelTitle._time + (reelTitle._animating ? dt : -dt),
-      0,
-      2
-    )
+    // Lusion: clamp time 0..2, advance when animating
+    reelTitle._time = clamp(reelTitle._time + (reelTitle._animating ? dt : -dt), 0, 2)
     if (reelDesc) {
       reelDesc._time = clamp(reelDesc._time + (reelDesc._animating ? dt : -dt), 0, 2)
     }
@@ -242,6 +263,7 @@ export function bindLusionScrollText() {
           let x
           let y
           if (p < 2) {
+            // first two: slide from -paddingLeft + up from 100%
             x = fit(
               reelTitle._time - Math.abs(2 - p) / 10,
               0.5,
@@ -252,6 +274,7 @@ export function bindLusionScrollText() {
             )
             y = fit(reelTitle._time - p / 10, 0, 1, 100, 0, easeLusion)
           } else {
+            // later words: drop from -100%
             x = 0
             y = fit(reelTitle._time - p / 10, 0, 1, -100, 0, easeLusion)
           }
@@ -264,7 +287,7 @@ export function bindLusionScrollText() {
       }
       if (reelTitleInner) {
         const f = titleRange.showScreenOffset * -parallaxUnit * 0.5
-        reelTitleInner.style.transform = `translate3d(0,${f}px,0)`
+        reelTitleInner.style.transform = `translate3d(0, ${f}px, 0)`
       }
     }
 
@@ -274,7 +297,7 @@ export function bindLusionScrollText() {
 
       const descParallax = contentRange.showScreenOffset * -parallaxUnit * 1.5
       if (reelDesc) {
-        reelDesc.style.transform = `translate3d(0,${descParallax}px,0)`
+        reelDesc.style.transform = `translate3d(0, ${descParallax}px, 0)`
         if (!useMobile()) {
           descWords.forEach((word, v) => {
             const op = fit(reelDesc._time - v / 100, 0, 1, 0.1, 1, easeExpoOut)
@@ -309,29 +332,34 @@ export function bindLusionScrollText() {
       }
     }
 
-    // thumb / video — scroll-linked show
     if (reelThumb) {
       const tr = getDomRange(reelThumb)
       const show = saturate(fit(tr.showScreenOffset, 0.05, 0.85, 0, 1, easeLusion))
-      const y = fit(show, 0, 1, 80, 0, easeLusion)
-      const s = fit(show, 0, 1, 0.96, 1, easeLusion)
       reelThumb.style.opacity = String(show)
-      reelThumb.style.transform = `translate3d(0, ${y}px, 0) scale(${s})`
+      reelThumb.style.transform = `translate3d(0, ${fit(show, 0, 1, 80, 0, easeLusion)}px, 0) scale(${fit(
+        show,
+        0,
+        1,
+        0.96,
+        1,
+        easeLusion
+      )})`
     }
 
     if (reelVideo) {
       const vr = getDomRange(reelVideo)
-      videoShowRatio = saturate(fit(vr.showScreenOffset, 0.0, 0.7, 0, 1, easeLusion))
-      const y = fit(videoShowRatio, 0, 1, 60, 0, easeLusion)
-      const s = fit(videoShowRatio, 0, 1, 0.94, 1, easeLusion)
+      videoShowRatio = saturate(fit(vr.showScreenOffset, 0, 0.7, 0, 1, easeLusion))
       reelVideo.style.opacity = String(0.4 + videoShowRatio * 0.6)
-      reelVideo.style.transform = `translate3d(0, ${y}px, 0) scale(${s})`
-      videoCrossAnimating = videoShowRatio > 0.9
-      videoCrossTime = clamp(
-        videoCrossTime + (videoCrossAnimating ? dt : -dt * 2),
+      reelVideo.style.transform = `translate3d(0, ${fit(
+        videoShowRatio,
         0,
-        1.4
-      )
+        1,
+        60,
+        0,
+        easeLusion
+      )}px, 0) scale(${fit(videoShowRatio, 0, 1, 0.94, 1, easeLusion)})`
+      videoCrossAnimating = videoShowRatio > 0.9
+      videoCrossTime = clamp(videoCrossTime + (videoCrossAnimating ? dt : -dt * 2), 0, 1.4)
       reelVideoCrosses.forEach((cross, f) => {
         const g = fit(videoCrossTime - f / 10, 0, 0.6, 0, 1, easeLusion)
         const rot = fit(videoCrossTime - f / 10, 0, 0.6, 0, 180, easeLusion)
@@ -376,6 +404,7 @@ export function bindLusionScrollText() {
         featuredTitle._animating = true
         if (!useMobile()) {
           featuredChars.forEach((ch, c) => {
+            // Lusion: fit(_time*1.5 - c/20, 0, 1, 1, 0) em + rotate 10→0
             const y = fit(featuredTitle._time * 1.5 - c / 20, 0, 1, 1, 0, easeLusion)
             const rot = fit(featuredTitle._time * 1.5 - c / 20, 0, 1, 10, 0, easeLusion)
             ch.style.transform = `translate3d(0, ${y}em, 0) rotate(${rot}deg)`
@@ -391,7 +420,7 @@ export function bindLusionScrollText() {
         featuredDisclaimer._animating = true
         if (!useMobile()) {
           disclaimerLines.forEach((line, c) => {
-            const y = fit(featuredDisclaimer._time * 1 - c / 20, 0, 1, 100, 0, easeLusion)
+            const y = fit(featuredDisclaimer._time - c / 20, 0, 1, 100, 0, easeLusion)
             line.style.transform = `translate3d(0, ${y}%, 0)`
           })
         } else {
@@ -422,7 +451,6 @@ export function bindLusionScrollText() {
       featuredNeedsReset = true
     }
 
-    // project items — scroll-time rise (DOM stand-in for Lusion UFX show)
     projectItems.forEach((el, i) => {
       const r = getDomRange(el)
       if (r.screenRatio > -1) el._animating = true
