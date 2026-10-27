@@ -278,14 +278,19 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   blend2.setUsage(THREE.DynamicDrawUsage)
 
   // feedback ping-pong (never sample RT while rendering into it)
-  const feedbackRT = new THREE.WebGLRenderTarget(1, 1, {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    format: THREE.RGBAFormat,
-  })
-  feedbackRT.texture.wrapS = feedbackRT.texture.wrapT = THREE.MirroredRepeatWrapping
-  const feedbackRT2 = feedbackRT.clone()
-  feedbackRT2.texture.wrapS = feedbackRT2.texture.wrapT = THREE.MirroredRepeatWrapping
+  // mipmaps approximate Lusion's blur before astronaut env sampling
+  const makeFeedbackRT = () => {
+    const rt = new THREE.WebGLRenderTarget(1, 1, {
+      minFilter: THREE.LinearMipmapLinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      generateMipmaps: true,
+    })
+    rt.texture.wrapS = rt.texture.wrapT = THREE.MirroredRepeatWrapping
+    return rt
+  }
+  const feedbackRT = makeFeedbackRT()
+  const feedbackRT2 = makeFeedbackRT()
   let feedbackRead = feedbackRT
   let feedbackWrite = feedbackRT2
 
@@ -337,6 +342,23 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const astronautRoot = new THREE.Group()
   scene.add(astronautRoot)
   const astronautMeshes = []
+  const CLONE_COUNT = 4
+  const clonePos = new THREE.InstancedBufferAttribute(new Float32Array(CLONE_COUNT * 3), 3)
+  clonePos.setUsage(THREE.DynamicDrawUsage)
+  const cloneOrient = new THREE.InstancedBufferAttribute(new Float32Array(CLONE_COUNT * 4), 4)
+  cloneOrient.setUsage(THREE.DynamicDrawUsage)
+  const cloneBlend1 = new THREE.InstancedBufferAttribute(new Float32Array(CLONE_COUNT * 3), 3)
+  cloneBlend1.setUsage(THREE.DynamicDrawUsage)
+  const cloneBlend2 = new THREE.InstancedBufferAttribute(new Float32Array(CLONE_COUNT * 3), 3)
+  cloneBlend2.setUsage(THREE.DynamicDrawUsage)
+  // init clone orients to identity
+  for (let i = 0; i < CLONE_COUNT; i++) {
+    cloneOrient.setXYZW(i, 0, 0, 0, 1)
+    cloneBlend1.setXYZ(i, 0, 1, 0)
+    cloneBlend2.setXYZ(i, 90, 91, 0)
+  }
+  const cloneMeshes = []
+  let clonesShowRatio = 0
 
   PARTS.forEach((part, idx) => {
     const geo = partGeos[idx]
@@ -374,7 +396,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       uniforms: blackUniformsAstro,
       vertexShader: astronautVert,
       fragmentShader: isGlass ? glassFrag : astronautBlackFrag,
-      transparent: isGlass,
+      transparent: true,
       side: THREE.DoubleSide,
       defines: { BONE_COUNT, IS_BLACK: true },
     })
@@ -384,6 +406,39 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     mesh.userData.blackMat = blackMat
     astronautRoot.add(mesh)
     astronautMeshes.push(mesh)
+
+    // Lusion clones — additive ghosts during black tunnel
+    if (!isGlass) {
+      const cig = new THREE.InstancedBufferGeometry()
+      for (const key in geo.attributes) cig.setAttribute(key, geo.attributes[key])
+      if (geo.index) cig.setIndex(geo.index)
+      cig.instanceCount = CLONE_COUNT
+      cig.setAttribute('instancePos', clonePos)
+      cig.setAttribute('instanceOrient', cloneOrient)
+      cig.setAttribute('instanceAnimationFrameFromToBlend1', cloneBlend1)
+      cig.setAttribute('instanceAnimationFrameFromToBlend2', cloneBlend2)
+      const cloneMat = new THREE.ShaderMaterial({
+        uniforms: {
+          ...blackUniformsAstro,
+          u_armbTexture: { value: partTex[texKey].armb },
+          u_norTexture: { value: partTex[texKey].nor },
+        },
+        vertexShader: astronautVert,
+        fragmentShader: astronautBlackFrag,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        defines: { BONE_COUNT, IS_BLACK: true },
+      })
+      const cmesh = new THREE.Mesh(cig, cloneMat)
+      cmesh.frustumCulled = false
+      cmesh.renderOrder = 1000
+      cmesh.visible = false
+      astronautRoot.add(cmesh)
+      cloneMeshes.push(cmesh)
+    }
   })
 
   // —— White tunnel (Lusion GoalWhiteTunnel) ——
@@ -487,6 +542,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       side: THREE.DoubleSide,
       transparent: true,
       depthWrite: false,
+      // Additive stand-in for Lusion post bloom — makes greeble glow
+      blending: THREE.AdditiveBlending,
       defines: { GRID_SIZE, ...(isHd ? { IS_HD: true } : {}) },
     })
     const mesh = new THREE.Mesh(ig, mat)
@@ -645,6 +702,10 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       const next = useWhiteMat ? mesh.userData.whiteMat : mesh.userData.blackMat
       if (mesh.material !== next) mesh.material = next
     }
+    clonesShowRatio = isBlackTunnelActive ? smoothstep(0.2, 0.4, blackTunnelRatio) : 0
+    for (const cmesh of cloneMeshes) {
+      cmesh.visible = !isWhiteTunnelActive && clonesShowRatio > 0.01
+    }
 
     // Path: Lusion updateTransforms
     let path
@@ -695,6 +756,39 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
     instancePos.needsUpdate = true
     instanceOrient.needsUpdate = true
+
+    // Clone offsets — Lusion Brownian ghosts around hero
+    if (clonesShowRatio > 0.01) {
+      for (let i = 0; i < CLONE_COUNT; i++) {
+        const t = tunnelTime * (0.7 + i * 0.17) + i * 1.7
+        const amp = 4 + clonesShowRatio * 8
+        const ox = Math.sin(t * 1.3) * amp + Math.cos(t * 0.7 + i) * amp * 0.4
+        const oy = Math.cos(t * 1.1) * amp * 0.7
+        const oz = Math.sin(t * 0.9 + i * 0.5) * amp * 0.5
+        const fade = fit(clonesShowRatio, (i / (CLONE_COUNT - 1)) * 0.3, 0.7 + (i / (CLONE_COUNT - 1)) * 0.3, 1, 0)
+        clonePos.setXYZ(
+          i,
+          path.p.x + ox * (1 - fade * 0.35),
+          path.p.y + oy * (1 - fade * 0.35),
+          path.p.z + oz * (1 - fade * 0.35)
+        )
+        // slight rotation jitter
+        const e = new THREE.Euler(
+          motionEuler.x + Math.sin(t) * 0.4,
+          motionEuler.y + Math.cos(t * 1.2) * 0.4,
+          motionEuler.z + Math.sin(t * 0.8) * 0.3
+        )
+        const cq = new THREE.Quaternion().setFromEuler(e).multiply(tmpQ)
+        cloneOrient.setXYZW(i, cq.x, cq.y, cq.z, cq.w)
+        cloneBlend1.setXYZ(i, blend1.getX(0), blend1.getY(0), blend1.getZ(0))
+        cloneBlend2.setXYZ(i, blend2.getX(0), blend2.getY(0), blend2.getZ(0))
+      }
+      clonePos.needsUpdate = true
+      cloneOrient.needsUpdate = true
+      cloneBlend1.needsUpdate = true
+      cloneBlend2.needsUpdate = true
+    }
+
     astronautRoot.visible = showRatio > 0.02
 
     // —— Lusion CameraControls: base FOV ~45, dolly via distance ——
@@ -868,6 +962,16 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blend2.needsUpdate = true
     sharedUniforms.u_loopLinearBlend.value =
       fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
+
+    if (clonesShowRatio > 0.01) {
+      for (let i = 0; i < CLONE_COUNT; i++) {
+        const shift = i * 7
+        cloneBlend1.setXYZ(i, I + shift, F + shift, blend)
+        cloneBlend2.setXYZ(i, u, f, p)
+      }
+      cloneBlend1.needsUpdate = true
+      cloneBlend2.needsUpdate = true
+    }
 
     // Feedback: render black tunnel into write RT while sampling previous read RT
     if (isBlackTunnelActive) {

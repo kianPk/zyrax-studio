@@ -219,8 +219,9 @@ void main() {
 ${astronautCommonBody}
   vec2 uvDiff = cartesianToPolar(worldNormal);
   vec2 uvSpec = cartesianToPolar(reflection);
-  vec3 blackTunnelEnvDiff = texture2D(u_blackTunnelTexture, 0.25 * uvDiff).rgb;
-  vec3 blackTunnelEnvSpec = texture2D(u_blackTunnelTexture, 0.25 * uvSpec).rgb * (0.2 + metalness * 0.7) * 2.0;
+  // bias mip level ~3 ≈ Lusion's dual blur on tunnel feedback
+  vec3 blackTunnelEnvDiff = texture2D(u_blackTunnelTexture, 0.25 * uvDiff, 3.0).rgb * 1.75;
+  vec3 blackTunnelEnvSpec = texture2D(u_blackTunnelTexture, 0.25 * uvSpec, 3.0).rgb * (0.35 + metalness * 0.9) * 2.4;
   mat4 frameInRotation = rotation3d(vec3(1.0, 0.0, 0.0), 0.2 + 1.0 * u_frameIn);
   vec3 viewDir = (vec4(normalize(v_worldPosition), 1.0) * frameInRotation).xyz;
   vec3 x = normalize(vec3(viewDir.z, 0.0, -viewDir.x));
