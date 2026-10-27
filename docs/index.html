@@ -8,8 +8,8 @@
   <meta property="og:title" content="Zyrax — Kian Zarandi" />
   <meta property="og:url" content="https://kianpk.github.io/zyrax-studio/" />
   <script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
-  <script type="module" crossorigin src="/zyrax-studio/assets/index-CvsxnJ_k.js"></script>
-  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-BdOogHio.css">
+  <script type="module" crossorigin src="/zyrax-studio/assets/index-Cvbgm5m-.js"></script>
+  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-quMAbGDA.css">
 </head>
 <body>
   <canvas id="canvas" aria-hidden="true"></canvas>
@@ -87,18 +87,46 @@
                 <span id="home-reel-cta-arrow">→</span>
               </a>
             </div>
-            <div id="home-reel-thumb-wrapper"><div id="home-reel-thumb"></div></div>
+            <div id="home-reel-thumb-wrapper">
+              <div id="home-reel-thumb">
+                <video
+                  id="home-reel-thumb-video"
+                  muted
+                  playsinline
+                  loop
+                  autoplay
+                  preload="metadata"
+                  crossorigin="anonymous"
+                  src="https://lusion.co/assets/textures/reel/desktop.mp4"
+                ></video>
+              </div>
+            </div>
           </div>
 
           <div id="home-reel-video" class="section">
             <div id="home-reel-video-container">
-              <div id="home-reel-video-bg"></div>
+              <video
+                id="home-reel-video-el"
+                muted
+                playsinline
+                loop
+                preload="metadata"
+                crossorigin="anonymous"
+                src="https://lusion.co/assets/textures/reel/desktop.mp4"
+              ></video>
+              <div id="home-reel-video-container-top" class="home-reel-video-container-crosses home-reel-video-crosses-top">
+                <span class="home-reel-video-container-cross">+</span>
+                <span class="home-reel-video-container-cross">+</span>
+                <span class="home-reel-video-container-cross">+</span>
+                <span class="home-reel-video-container-cross">+</span>
+                <span class="home-reel-video-container-cross">+</span>
+              </div>
               <button id="home-reel-video-title" type="button" data-reel>
                 <span class="home-reel-video-title-word">PLAY</span>
                 <span class="home-reel-video-container-svg-wrapper">▶</span>
                 <span class="home-reel-video-title-word">REEL</span>
               </button>
-              <div class="home-reel-video-container-crosses">
+              <div id="home-reel-video-container-bottom" class="home-reel-video-container-crosses home-reel-video-crosses-bottom">
                 <span class="home-reel-video-container-cross">+</span>
                 <span class="home-reel-video-container-cross">+</span>
                 <span class="home-reel-video-container-cross">+</span>
@@ -117,7 +145,11 @@
             </div>
             <div class="project-list" id="project-list"></div>
             <div id="home-featured-cta">
-              <a href="https://github.com/kianPk" target="_blank" rel="noreferrer">SEE ALL PROJECTS</a>
+              <a href="https://github.com/kianPk" target="_blank" rel="noreferrer">
+                <span id="home-featured-cta-dot"></span>
+                <span id="home-featured-cta-text">SEE ALL PROJECTS</span>
+                <span id="home-featured-cta-arrow">→</span>
+              </a>
             </div>
           </div>
 

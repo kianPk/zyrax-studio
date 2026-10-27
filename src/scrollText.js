@@ -200,15 +200,8 @@ export function bindLusionScrollText() {
       featuredCta.style.overflow = 'hidden'
     }
 
-    projectItems = Array.from(document.querySelectorAll('.project-item')).map((el, i) => {
-      el._time = 0
-      el._animating = false
-      el.style.opacity = '0'
-      el.style.transform = 'translate3d(0, 90px, 0)'
-      el.style.willChange = 'transform, opacity'
-      el.dataset.projectIndex = String(i)
-      return el
-    })
+    // Project cards are driven by featuredProjects.js (Lusion ProjectItem)
+    projectItems = []
     resetFeatured()
   }
   splitFeatured()
@@ -450,16 +443,6 @@ export function bindLusionScrollText() {
     } else {
       featuredNeedsReset = true
     }
-
-    projectItems.forEach((el, i) => {
-      const r = getDomRange(el)
-      if (r.screenRatio > -1) el._animating = true
-      el._time = clamp(el._time + (el._animating ? dt : -dt), 0, 1.2)
-      const stagger = (i % 2) * 0.08
-      const t = fit(el._time - stagger, 0, 1, 0, 1, easeLusion)
-      el.style.opacity = String(t)
-      el.style.transform = `translate3d(0, ${(1 - t) * 90}px, 0)`
-    })
   }
 
   const updateGoalContext = (dt) => {

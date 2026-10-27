@@ -5,6 +5,8 @@ import { createBalloonsHero } from './balloons.js'
 import { createGoalTunnel } from './tunnel.js'
 import { bindGoalDomScroll } from './goalDom.js'
 import { bindLusionScrollText } from './scrollText.js'
+import { bindFeaturedProjects } from './featuredProjects.js'
+import { bindReelScroll } from './reelScroll.js'
 import { createScrollLines } from './scrollLines.js'
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
@@ -46,19 +48,24 @@ window.addEventListener(
   { passive: true }
 )
 
-// Featured projects — Lusion-style list
+// Featured projects — exact Lusion lineup + assets, Zyrax brand chrome
+const assetBase = `${import.meta.env.BASE_URL}assets/projects/`
 const list = document.getElementById('project-list')
 if (list) {
   list.innerHTML = projects
     .map(
       (p) => `
-    <a class="project-item" href="${p.url}" target="_blank" rel="noreferrer">
+    <a class="project-item project-type-website" href="${p.url}" target="_blank" rel="noreferrer"
+       data-id="${p.id}" data-color-bg="${p.colorBg}" data-color-text="${p.colorText}">
       <div class="project-item-main">
-        <div class="project-item-image" style="background:${p.hue}"><span>${p.title}</span></div>
+        <div class="project-item-image" style="background:${p.colorBg}">
+          <img src="${assetBase}${p.id}/home.webp" alt="${p.title}" loading="lazy" decoding="async" />
+        </div>
       </div>
       <div class="project-item-footer">
         <div class="project-item-line-1">${p.tags}</div>
         <div class="project-item-line-2">
+          <div class="project-item-line-2-icon" aria-hidden="true">↗</div>
           <div class="project-item-line-2-inner">${p.title}</div>
         </div>
       </div>
@@ -84,6 +91,8 @@ let goalTunnel = null
 
 // Lusion continuous scroll-time text (Bold Ideas / Featured / etc.)
 const scrollText = bindLusionScrollText()
+const featuredProjects = bindFeaturedProjects()
+const reelScroll = bindReelScroll()
 let scrollLines = null
 
 let lastTick = performance.now()
@@ -112,6 +121,8 @@ gsap.ticker.add((time) => {
 
   lenis.raf(time * 1000)
   scrollText.update(dt)
+  featuredProjects.update(dt)
+  reelScroll.update(dt)
   scrollLines?.update()
   goalTunnel?.tickFrame?.(dt)
 })
