@@ -238,7 +238,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   }
   renderer.setClearColor(0x000000, 1)
   // Mobile needs a bit more than 1x or astronaut reads as soft/grainy vs Lusion
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 1.35))
+  // Mobile: DPR 1 — Stage3D bloom pyramid is expensive; smoothness > retina
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
   // Lusion Stage3D writes display-referred colors in custom shaders with no
   // Linear→sRGB pass. Keep output linear so the entry suit isn't crushed.
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace
@@ -880,7 +881,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let wasStickyActive = false
 
   // Lusion Stage3D bloom + halo RGB-shift (chromatic rings / glow)
-  const post = createTunnelPost(renderer, scene, camera)
+  const post = createTunnelPost(renderer, scene, camera, { isMobile })
 
   const resize = () => {
     const parent = stickyEl

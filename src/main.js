@@ -10,7 +10,8 @@ import { createFeaturedWebgl } from './featuredWebgl.js'
 import { bindReelScroll } from './reelScroll.js'
 import { createScrollLines } from './scrollLines.js'
 
-const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+const isMobile =
+  /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
 
 // Match Lusion --vh
 const setVh = () => {
@@ -20,13 +21,14 @@ setVh()
 window.addEventListener('resize', setVh)
 
 // Softer wheel than default Lenis — closer to Lusion ScrollPane (wheelEaseCoeff 12)
+// Mobile: shorter duration + native-ish touch to cut scroll jank vs multi-WebGL load
 const lenis = new Lenis({
-  duration: isMobile ? 1.05 : 1.35,
+  duration: isMobile ? 0.85 : 1.35,
   easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-  smoothWheel: true,
+  smoothWheel: !isMobile,
   syncTouch: false,
   wheelMultiplier: isMobile ? 0.9 : 0.82,
-  touchMultiplier: 1.1,
+  touchMultiplier: isMobile ? 1.35 : 1.1,
 })
 window.lenis = lenis
 let goalAutoScrollSpeed = 0
@@ -153,7 +155,8 @@ lenis.on('scroll', () => {
   }
 })
 
-// Boot WebGL: scroll lines (light) + goal tunnel, then balloons
+// Boot WebGL: scroll lines + goal tunnel, then balloons
+// Mobile still gets lines (signature look) but at DPR 1 inside scrollLines.js
 createScrollLines()
   .then((api) => {
     scrollLines = api
@@ -176,12 +179,14 @@ createGoalTunnel(goalCanvas, goalSection, goalTitle)
       })
   })
 
-// Lusion ProjectItem UfxMesh — depth parallax WebGL cards
-createFeaturedWebgl(projects)
-  .then((api) => {
-    featuredWebgl = api
-  })
-  .catch((err) => console.error('Featured WebGL failed', err))
+// Lusion ProjectItem UfxMesh — skip on mobile (extra WebGL context = lag)
+if (!isMobile) {
+  createFeaturedWebgl(projects)
+    .then((api) => {
+      featuredWebgl = api
+    })
+    .catch((err) => console.error('Featured WebGL failed', err))
+}
 
 function splitWords(el, className = 'word') {
   if (!el) return
@@ -211,16 +216,57 @@ crosses.forEach((c, i) => {
   c.style.transitionDelay = `${0.15 + i * 0.08}s`
 })
 
-const menu = document.querySelector('[data-menu]')
-document.querySelector('[data-menu-open]')?.addEventListener('click', () => {
-  menu.hidden = false
-  document.body.style.overflow = 'hidden'
+// Lusion Header._enableMenu — dropdown panel + MENU↔CLOSE + dots rotate
+const headerEl = document.getElementById('header')
+const headerContainer = document.getElementById('header-container')
+const headerBackground = document.getElementById('header-background')
+const headerMenu = document.getElementById('header-menu')
+const menuBtn = document.getElementById('header-right-menu-btn')
+let menuOpened = false
+
+const enableMenu = (open) => {
+  menuOpened = !!open
+  headerEl?.classList.toggle('--menu-opened', menuOpened)
+  headerContainer?.classList.toggle('--opened', menuOpened)
+  headerBackground?.classList.toggle('--opened', menuOpened)
+  headerMenu?.classList.toggle('--opened', menuOpened)
+  menuBtn?.classList.toggle('--opened', menuOpened)
+  if (headerBackground) {
+    headerBackground.style.opacity = menuOpened
+      ? window.innerWidth >= 1000
+        ? '0.2'
+        : '1'
+      : '0'
+  }
+}
+
+menuBtn?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  enableMenu(!menuOpened)
 })
-document.querySelectorAll('[data-menu-close]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    menu.hidden = true
-    document.body.style.overflow = ''
+headerBackground?.addEventListener('click', () => enableMenu(false))
+document.querySelectorAll('[data-menu-close]').forEach((el) => {
+  el.addEventListener('click', (e) => {
+    const scrollTo = el.getAttribute('data-scroll-to')
+    const href = el.getAttribute('href')
+    enableMenu(false)
+    if (scrollTo === 'contact') {
+      e.preventDefault()
+      lenis.scrollTo('#footer-section')
+    } else if (href && href.startsWith('#')) {
+      e.preventDefault()
+      lenis.scrollTo(href === '#top' ? 0 : href)
+    }
   })
+})
+document.addEventListener('click', (e) => {
+  if (!menuOpened) return
+  const t = e.target
+  if (t?.closest?.('#header-menu') || t?.closest?.('#header-right-menu-btn')) return
+  enableMenu(false)
+})
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') enableMenu(false)
 })
 
 document.querySelector('[data-reel]')?.addEventListener('click', (e) => {

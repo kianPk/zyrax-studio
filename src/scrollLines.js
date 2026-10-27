@@ -179,7 +179,10 @@ export async function createScrollLines() {
     return { update() {}, resize() {}, destroy() {} }
   }
   renderer.setClearColor(0x000000, 0)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  const isMobileLines =
+    /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
+  // Mobile: keep lines but cap DPR — 2x + 4 WebGL contexts was the main lag source
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobileLines ? 1 : 1.5))
   renderer.autoClear = true
 
   const lines = []

@@ -168,9 +168,10 @@ function makeRT(w, h, depth = false) {
   return rt
 }
 
-export function createTunnelPost(renderer, scene, camera) {
+export function createTunnelPost(renderer, scene, camera, { isMobile = false } = {}) {
   const size = new THREE.Vector2(1, 1)
   renderer.getSize(size)
+  let isMobileBloom = !!isMobile
 
   let sceneRT = makeRT(1, 1, true)
   let efxRT = makeRT(1, 1, false)
@@ -288,7 +289,6 @@ export function createTunnelPost(renderer, scene, camera) {
   let haloMaskOuter = 0.5
   let clearAlpha = 0
   let enabled = true
-  let isMobileBloom = false
   let w = 1
   let h = 1
 
@@ -310,13 +310,16 @@ export function createTunnelPost(renderer, scene, camera) {
   const resize = (nw, nh) => {
     w = Math.max(1, Math.floor(nw))
     h = Math.max(1, Math.floor(nh))
-    sceneRT.setSize(w, h)
-    efxRT.setSize(w, h)
+    // Mobile: half-res scene + efx buffers — biggest GPU win for scroll smoothness
+    const sceneScale = isMobileBloom ? 0.5 : 1
+    sceneRT.setSize(Math.max(1, Math.floor(w * sceneScale)), Math.max(1, Math.floor(h * sceneScale)))
+    efxRT.setSize(sceneRT.width, sceneRT.height)
     // Lusion Bloom (non-FFT path): high-pass + pyramid start at half-res
     // Desktop Lusion uses FFT at powerTwoCeiling(half)>>1 — we keep half-res pyramid
     // but scale weights like the FFT amount formula so bloomAmount=30 stays soft.
-    let rw = Math.max(1, Math.ceil(w / 2))
-    let rh = Math.max(1, Math.ceil(h / 2))
+    const bloomStart = isMobileBloom ? 4 : 2
+    let rw = Math.max(1, Math.ceil(w / bloomStart))
+    let rh = Math.max(1, Math.ceil(h / bloomStart))
     highPassRT.setSize(rw, rh)
     for (let i = 0; i < ITERATION; i++) {
       blurH[i].setSize(rw, rh)
@@ -358,16 +361,15 @@ export function createTunnelPost(renderer, scene, camera) {
     // Desktop Lusion USE_CONVOLUTION FFT bloom reads as a soft chromatic ring
     // around the astronaut during blackTitle. Our gaussian path needs an
     // explicit halo lift so the entry matches that ring (exact formula starts at 0).
-    if (!isWhiteTunnelActive && !isMobile && blackFrameInRatio > 0.85 && blackTunnelRatio < 0.15) {
+    if (!isWhiteTunnelActive && blackFrameInRatio > 0.55 && blackTunnelRatio < 0.25) {
+      // Stronger than Lusion's raw curve — FFT kernel otherwise reads as the ring
       const entryRing = THREE.MathUtils.lerp(
-        0.22,
-        0.12,
-        THREE.MathUtils.clamp(blackTitleRatio / 0.4, 0, 1)
+        isMobile ? 0.24 : 0.42,
+        isMobile ? 0.12 : 0.18,
+        THREE.MathUtils.clamp(blackTitleRatio / 0.5, 0, 1)
       )
-      hs = Math.max(hs, entryRing * blackFrameInRatio)
+      hs = Math.max(hs, entryRing * Math.min(1, blackFrameInRatio))
     }
-    // Portrait: slightly stronger halo so the title-ring reads like Lusion
-    if (isMobile && !isWhiteTunnelActive) hs *= 1.05
     haloStrength = hs
 
     // bloomSaturation fit(blackTunnelRatio, 0, .7, 1, 3)
@@ -407,15 +409,19 @@ export function createTunnelPost(renderer, scene, camera) {
       clearAlpha = 0
     }
 
-    haloWidth = 0.6
-    // Stage3D default haloRGBShift is 0.02 — keeps the rainbow entry ring vivid
-    haloRGBShift = isMobile ? 0.012 : 0.02
-    haloMaskInner = 0.3
-    haloMaskOuter = 0.5
+    // Wider soft ring on entry title beat (Lusion FFT star reads as a large oval)
+    const onEntryTitle =
+      !isWhiteTunnelActive && blackFrameInRatio > 0.55 && blackTunnelRatio < 0.2
+    haloWidth = onEntryTitle ? 0.85 : 0.6
+    // Stage3D default haloRGBShift is 0.02 — entry needs more for the rainbow ring
+    haloRGBShift = onEntryTitle ? 0.04 : isMobile ? 0.012 : 0.02
+    haloMaskInner = onEntryTitle ? 0.15 : 0.3
+    haloMaskOuter = onEntryTitle ? 0.75 : 0.5
     // Desktop approximates FFT star bloom with a softer gaussian radius so
     // speculars (visor glint) don't become hard rectangular blobs.
-    bloomRadius = isMobile ? 0 : 0.45
-    highPassMultiplier = 1
+    // Mobile: tiny radius — full pyramid bloom is the lag hotspot
+    bloomRadius = isMobile ? 0.15 : onEntryTitle ? 0.55 : 0.5
+    highPassMultiplier = onEntryTitle ? 1.15 : 1
     efxActive = isBlackTunnelActive || isWhiteTunnelActive
   }
 
@@ -511,9 +517,10 @@ export function createTunnelPost(renderer, scene, camera) {
     highPassMat.uniforms.u_haloMaskOuter.value = haloMaskOuter
     renderFullscreen(highPassMat, highPassRT)
 
-    // 4) Separable gaussian pyramid
+    // 4) Separable gaussian pyramid (mobile: 3 mips — enough glow, half the fill-rate)
+    const bloomIters = isMobileBloom ? 3 : ITERATION
     let current = highPassRT
-    for (let i = 0; i < ITERATION; i++) {
+    for (let i = 0; i < bloomIters; i++) {
       const mat = blurMats[i]
       mat.uniforms.u_texture.value = current.texture
       mat.uniforms.u_resolution.value.set(current.width, current.height)
@@ -545,23 +552,28 @@ export function createTunnelPost(renderer, scene, camera) {
       amountForWeights = convAmount * 48
     }
     for (let u = 0; u < ITERATION; u++) {
-      const f = (ITERATION - u) / ITERATION
-      let w =
+      if (u >= bloomIters) {
+        bloomWeights[u] = 0
+        continue
+      }
+      const f = (bloomIters - u) / bloomIters
+      let bw =
         amountForWeights *
         (f + (1.2 - f * 2) * bloomRadius) /
-        Math.pow(2, ITERATION - u - 1)
+        Math.pow(2, bloomIters - u - 1)
       // Soften sharpest mips — FFT star kernel spreads specular energy wide.
-      if (!isMobileBloom && u === 0) w *= 0.15
-      if (!isMobileBloom && u === 1) w *= 0.45
-      if (!isMobileBloom && u >= 3) w *= 1.75
-      bloomWeights[u] = w
+      if (!isMobileBloom && u === 0) bw *= 0.15
+      if (!isMobileBloom && u === 1) bw *= 0.45
+      if (!isMobileBloom && u >= 3) bw *= 1.75
+      bloomWeights[u] = bw
     }
 
     // 6) Composite to screen
     compositeMat.uniforms.u_texture.value = fromTex
     compositeMat.uniforms.u_saturation.value = bloomSaturation
     for (let i = 0; i < ITERATION; i++) {
-      compositeMat.uniforms[`u_blurTexture${i}`].value = blurV[i].texture
+      const src = i < bloomIters ? blurV[i].texture : blurV[bloomIters - 1].texture
+      compositeMat.uniforms[`u_blurTexture${i}`].value = src
     }
     renderer.setRenderTarget(null)
     blit(compositeMat, null)

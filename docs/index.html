@@ -8,8 +8,8 @@
   <meta property="og:title" content="Zyrax — Kian Zarandi" />
   <meta property="og:url" content="https://kianpk.github.io/zyrax-studio/" />
   <script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
-  <script type="module" crossorigin src="/zyrax-studio/assets/index-BbKV1Y_7.js"></script>
-  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-DJvJPLnq.css">
+  <script type="module" crossorigin src="/zyrax-studio/assets/index-C616gJM1.js"></script>
+  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-_fjWVGuH.css">
 </head>
 <body>
   <canvas id="canvas" aria-hidden="true"></canvas>
@@ -17,6 +17,7 @@
   <div id="ui">
     <header id="header">
       <div id="header-container">
+        <div id="header-background"></div>
         <a id="header-logo" href="#top" aria-label="Zyrax home">ZYRAX</a>
         <div id="header-right">
           <button id="header-right-sound-btn" type="button" aria-label="Sound" data-sound>
@@ -26,29 +27,70 @@
             <span id="header-right-talk-btn-text">LET'S TALK</span>
             <span id="header-right-talk-btn-dots"></span>
           </a>
-          <button id="header-right-menu-btn" type="button" data-menu-open>
-            <span id="header-right-menu-btn-inner">
-              <span id="header-right-menu-btn-text">MENU</span>
-              <span id="header-right-menu-btn-dots">
+          <button id="header-right-menu-btn" type="button" aria-label="Menu button" data-menu-open>
+            <div id="header-right-menu-btn-inner">
+              <span id="header-right-menu-btn-text">Menu</span>
+              <span id="header-right-menu-btn-text-close">Close</span>
+              <div id="header-right-menu-btn-dots">
                 <span class="header-right-menu-btn-dot"></span>
                 <span class="header-right-menu-btn-dot"></span>
-              </span>
-            </span>
+              </div>
+            </div>
           </button>
+        </div>
+        <div id="header-menu" data-menu>
+          <div id="header-menu-links">
+            <a class="header-menu-link" href="#top" data-menu-close data-page="home">
+              <div class="header-menu-link-background"></div>
+              <div class="header-menu-link-inner">
+                <span class="header-menu-link-text">Home</span>
+                <span class="header-menu-link-text-clone">Home</span>
+                <svg class="header-menu-link-svg" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
+              </div>
+            </a>
+            <a class="header-menu-link" href="#home-featured" data-menu-close data-page="projects">
+              <div class="header-menu-link-background"></div>
+              <div class="header-menu-link-inner">
+                <span class="header-menu-link-text">Projects</span>
+                <span class="header-menu-link-text-clone">Projects</span>
+                <svg class="header-menu-link-svg" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
+              </div>
+            </a>
+            <a class="header-menu-link" href="#home-goal" data-menu-close data-page="about">
+              <div class="header-menu-link-background"></div>
+              <div class="header-menu-link-inner">
+                <span class="header-menu-link-text">Approach</span>
+                <span class="header-menu-link-text-clone">Approach</span>
+                <svg class="header-menu-link-svg" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
+              </div>
+            </a>
+            <button class="header-menu-link" type="button" data-menu-close data-scroll-to="contact">
+              <div class="header-menu-link-background"></div>
+              <div class="header-menu-link-inner">
+                <span class="header-menu-link-text">Contact</span>
+                <span class="header-menu-link-text-clone">Contact</span>
+                <svg class="header-menu-link-svg" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
+              </div>
+            </button>
+          </div>
+          <button id="header-menu-talk" type="button">
+            <a href="https://t.me/Kian_asli" target="_blank" rel="noreferrer" aria-label="Let's talk"></a>
+            <div id="header-menu-text">Let's talk</div>
+            <svg id="header-menu-talk-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" stroke="currentColor" stroke-width="1.5" rx="2"></rect><rect width="12" height="4" x="6" y="14" fill="currentColor" rx="2"></rect><path stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M7 7h10M7 10h10"></path></svg>
+          </button>
+          <a id="header-menu-labs" target="_blank" rel="noreferrer" href="https://github.com/kianPk">
+            <div id="header-menu-labs-inner">
+              <div id="header-menu-labs-texts">
+                <div id="header-menu-labs-text">GitHub</div>
+                <div id="header-menu-labs-text-clone">GitHub</div>
+              </div>
+              <svg id="header-menu-labs-arrow" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
+              <svg id="header-menu-labs-arrow2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
+            </div>
+          </a>
         </div>
       </div>
     </header>
-
-    <nav id="menu" hidden data-menu>
-      <button class="menu-close" type="button" data-menu-close>×</button>
-      <div class="menu-links">
-        <a href="#home-featured" data-menu-close>Work</a>
-        <a href="#home-goal" data-menu-close>Approach</a>
-        <a href="#end-section" data-menu-close>Contact</a>
-        <a href="https://github.com/kianPk" target="_blank" rel="noreferrer">GitHub</a>
-        <a href="https://www.zyrax.ir" target="_blank" rel="noreferrer">zyrax.ir</a>
-      </div>
-    </nav>
 
     <div id="page-container">
       <div id="page-container-inner">
