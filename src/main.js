@@ -1,12 +1,10 @@
 import Lenis from 'lenis'
 import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { projects } from './projects.js'
 import { createBalloonsHero } from './balloons.js'
 import { createGoalTunnel } from './tunnel.js'
 import { bindGoalDomScroll } from './goalDom.js'
-
-gsap.registerPlugin(ScrollTrigger)
+import { bindLusionScrollText } from './scrollText.js'
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
@@ -23,9 +21,6 @@ const lenis = new Lenis({
   syncTouch: false,
 })
 window.lenis = lenis
-lenis.on('scroll', ScrollTrigger.update)
-gsap.ticker.add((time) => lenis.raf(time * 1000))
-gsap.ticker.lagSmoothing(0)
 
 // Featured projects — Lusion-style list
 const list = document.getElementById('project-list')
@@ -62,6 +57,19 @@ const goalTitle = document.getElementById('home-goal-tunnel-title')
 const goalSticky = document.getElementById('home-goal-tunnel-sticky')
 const goalDom = bindGoalDomScroll(goalSection, goalTitle, goalSticky)
 let goalTunnel = null
+
+// Lusion continuous scroll-time text (Bold Ideas / Featured / etc.)
+const scrollText = bindLusionScrollText()
+
+let lastTick = performance.now()
+gsap.ticker.add((time) => {
+  lenis.raf(time * 1000)
+  const now = performance.now()
+  const dt = Math.min(0.05, (now - lastTick) / 1000)
+  lastTick = now
+  scrollText.update(dt)
+})
+gsap.ticker.lagSmoothing(0)
 
 lenis.on('scroll', () => {
   goalDom.updateScroll()
@@ -127,152 +135,6 @@ requestAnimationFrame(() => {
 const crosses = document.querySelectorAll('.home-hero-scroll-container-cross')
 crosses.forEach((c, i) => {
   c.style.transitionDelay = `${0.15 + i * 0.08}s`
-})
-
-document.querySelectorAll('[data-reveal]').forEach((el, i) => {
-  ScrollTrigger.create({
-    trigger: el,
-    start: 'top 88%',
-    onEnter: () => {
-      el.style.transitionDelay = `${(i % 4) * 60}ms`
-      el.classList.add('is-in')
-    },
-  })
-})
-
-// Lusion-like ease curve for text reveals
-const easeLusion = 'power3.out'
-
-const splitScrubWords = (el, className = 'scrub-word') => {
-  if (!el) return []
-  const words = el.textContent.trim().split(/\s+/)
-  el.textContent = ''
-  return words.map((w) => {
-    const span = document.createElement('span')
-    span.className = className
-    span.textContent = w
-    span.style.display = 'inline-block'
-    span.style.transform = 'translate3d(0, 1.2em, 0)'
-    span.style.opacity = '0'
-    el.appendChild(span)
-    el.appendChild(document.createTextNode(' '))
-    return span
-  })
-}
-
-const splitChars = (el) => {
-  if (!el) return []
-  const text = el.textContent
-  el.textContent = ''
-  return [...text].map((ch) => {
-    const span = document.createElement('span')
-    span.className = 'char'
-    span.textContent = ch === ' ' ? '\u00a0' : ch
-    span.style.transform = 'translate3d(0, 1em, 0) rotate(10deg)'
-    el.appendChild(span)
-    return span
-  })
-}
-
-// Bold Ideas — word rise like Lusion reel title
-;[document.querySelector('#home-reel-title-line-1'), document.querySelector('#home-reel-title-line-2')].forEach(
-  (line, lineIdx) => {
-    const words = splitScrubWords(line)
-    words.forEach((w, i) => {
-      gsap.to(w, {
-        y: 0,
-        opacity: 1,
-        rotate: 0,
-        duration: 1.15,
-        ease: easeLusion,
-        delay: lineIdx * 0.12 + i * 0.05,
-        scrollTrigger: { trigger: '#home-reel-title', start: 'top 82%' },
-      })
-    })
-  }
-)
-
-gsap.from('#home-reel-desc', {
-  y: 56,
-  opacity: 0,
-  duration: 1.1,
-  ease: easeLusion,
-  scrollTrigger: { trigger: '#home-reel-desc', start: 'top 88%' },
-})
-gsap.from('#home-reel-cta', {
-  y: 28,
-  opacity: 0,
-  duration: 0.9,
-  ease: easeLusion,
-  scrollTrigger: { trigger: '#home-reel-cta', start: 'top 90%' },
-})
-gsap.from('#home-reel-thumb', {
-  y: 80,
-  opacity: 0,
-  scale: 0.96,
-  duration: 1.2,
-  ease: easeLusion,
-  scrollTrigger: { trigger: '#home-reel-thumb', start: 'top 90%' },
-})
-gsap.from('#home-reel-video-container', {
-  y: 60,
-  scale: 0.94,
-  opacity: 0.4,
-  duration: 1.2,
-  ease: easeLusion,
-  scrollTrigger: { trigger: '#home-reel-video', start: 'top 85%' },
-})
-
-// Featured Work — character stagger (Lusion)
-const featuredChars = splitChars(document.getElementById('home-featured-title'))
-featuredChars.forEach((ch, i) => {
-  gsap.to(ch, {
-    y: 0,
-    rotate: 0,
-    duration: 1.05,
-    ease: easeLusion,
-    delay: i * 0.028,
-    scrollTrigger: { trigger: '#home-featured-title', start: 'top 85%' },
-  })
-})
-
-const disc = document.getElementById('home-featured-disclaimer')
-if (disc) {
-  const text = disc.textContent.trim()
-  disc.innerHTML = `<span class="line">${text}</span>`
-  gsap.from(disc.querySelector('.line'), {
-    yPercent: 100,
-    duration: 1,
-    ease: easeLusion,
-    scrollTrigger: { trigger: disc, start: 'top 88%' },
-  })
-}
-
-gsap.utils.toArray('.project-item').forEach((el, i) => {
-  gsap.from(el, {
-    y: 90,
-    opacity: 0,
-    duration: 1.15,
-    ease: easeLusion,
-    delay: (i % 2) * 0.08,
-    scrollTrigger: { trigger: el, start: 'top 92%' },
-  })
-})
-
-gsap.from('#home-featured-cta', {
-  y: 40,
-  opacity: 0,
-  duration: 1,
-  ease: easeLusion,
-  scrollTrigger: { trigger: '#home-featured-cta', start: 'top 92%' },
-})
-
-gsap.from('#home-goal-title', {
-  y: 48,
-  opacity: 0,
-  duration: 1.1,
-  ease: easeLusion,
-  scrollTrigger: { trigger: '#home-goal-title', start: 'top 88%' },
 })
 
 const menu = document.querySelector('[data-menu]')

@@ -1,34 +1,49 @@
 /**
- * Weighted scroll ranges — port of Lusion GoalSectionRanges (simplified).
+ * Weighted scroll ranges — port of Lusion GoalSectionRanges.
+ * Weights match Lusion itemList (pixel-based phases approximated as weights).
  */
-export const GOAL_ITEMS = [
-  { id: 'blackFrameShow', weight: 0.25 },
-  { id: 'blackFrameIn', weight: 0.4 },
-  { id: 'blackTitle', weight: 3.2 },
-  { id: 'blackTunnel', weight: 6 },
-  { id: 'whiteTunnel', weight: 2.2 },
-  { id: 'whiteFrameOut', weight: 0.9 },
-  { id: 'whiteFrameBreak', weight: 1 },
-  { id: 'astronautDrop', weight: 1.2 },
-  { id: 'astronautWait', weight: 0.5 },
-]
+import {
+  fit,
+  clamp,
+  easeCubicIn,
+  easeCubicInOut,
+} from './scrollMath.js'
 
-export function fit(v, a, b, c, d) {
-  const t = Math.max(0, Math.min(1, (v - a) / ((b - a) || 1)))
-  return c + (d - c) * t
-}
+export { fit, clamp, easeCubicIn, easeCubicInOut }
 
-export function easeCubicIn(t) {
-  return t * t * t
-}
-
-export function easeCubicInOut(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+export function easeCubicOut(t) {
+  return 1 - Math.pow(1 - t, 3)
 }
 
 export function easeQuartIn(t) {
   return t * t * t * t
 }
+
+/** Approximate ease.backInOut used for astronaut Y drop */
+export function easeBackInOut(t) {
+  const c1 = 1.70158
+  const c2 = c1 * 1.525
+  return t < 0.5
+    ? (Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
+    : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2
+}
+
+export function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / ((edge1 - edge0) || 1)))
+  return t * t * (3 - 2 * t)
+}
+
+export const GOAL_ITEMS = [
+  { id: 'blackFrameShow', weight: 0.55 },
+  { id: 'blackFrameIn', weight: 1 },
+  { id: 'blackTitle', weight: 5 },
+  { id: 'blackTunnel', weight: 12 },
+  { id: 'whiteTunnel', weight: 2 },
+  { id: 'whiteFrameOut', weight: 1 },
+  { id: 'whiteFrameBreak', weight: 1.5 },
+  { id: 'astronautDrop', weight: 1.6 },
+  { id: 'astronautWait', weight: 0.9 },
+]
 
 export function createGoalRanges(sectionEl) {
   const totalWeight = GOAL_ITEMS.reduce((s, i) => s + i.weight, 0)
