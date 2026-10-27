@@ -593,8 +593,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     for (let i = 0; i < BLOCK_COUNT; i++) ids[i] = i
     ig.setAttribute('a_instanceId', new THREE.InstancedBufferAttribute(ids, 1))
     ig.instanceCount = BLOCK_COUNT
-    // Lusion GoalWhiteTunnel: opaque ShaderMaterial (alpha still written for bloom mask).
-    // transparent:true blends overlapping instances and washes cobalt→lavender.
+    // Frag writes low alpha on white pattern so it composites over white clear —
+    // that high-key wash is what keeps cobalt in the crevices (Lusion look).
+    // Keep depthWrite so stacked blocks don't ghost into a flat blue field.
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         u_texture: { value: blockTex },
@@ -605,7 +606,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       },
       vertexShader: whiteTunnelVert,
       fragmentShader: whiteTunnelFrag,
-      transparent: false,
+      transparent: true,
       depthWrite: true,
       depthTest: true,
       extensions: { derivatives: true },
@@ -976,6 +977,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     wallMat.uniforms.u_ratio.value = whiteTunnelRatio
     baseMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
     wallMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
+
+    // White tunnel: lift ambient so quilted suit + cyan rim read against bloom
+    // (Linear canvas midtones otherwise crush to silhouette vs Lusion display path)
+    sharedUniforms.u_ambientColor.value.set(
+      isWhiteTunnelActive && astronautDropRatio < 1 ? '#9eb4c8' : '#566d80'
+    )
 
     // phase colors — Lusion clearAlpha:0 on black; white tunnel opaque white
     const bg = new THREE.Color(

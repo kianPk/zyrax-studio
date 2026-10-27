@@ -386,7 +386,8 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
       bloomAmount =
         astronautDropRatio < 1
           ? THREE.MathUtils.lerp(
-              4,
+              // Soften Lusion's opening 4 so suit detail survives SwiftShader/desktop bloom
+              isMobile ? 3.2 : 3.4,
               2,
               THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1)
             )
