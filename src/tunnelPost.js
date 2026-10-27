@@ -400,7 +400,9 @@ export function createTunnelPost(renderer, scene, camera) {
     haloRGBShift = isMobile ? 0.012 : 0.015
     haloMaskInner = 0.3
     haloMaskOuter = 0.5
-    bloomRadius = 0
+    // Desktop approximates FFT star bloom with a softer gaussian radius so
+    // speculars (visor glint) don't become hard rectangular blobs.
+    bloomRadius = isMobile ? 0 : 0.4
     highPassMultiplier = 1
     efxActive = isBlackTunnelActive || isWhiteTunnelActive
   }
@@ -535,10 +537,10 @@ export function createTunnelPost(renderer, scene, camera) {
         amountForWeights *
         (f + (1.2 - f * 2) * bloomRadius) /
         Math.pow(2, ITERATION - u - 1)
-      // Soften the sharpest pyramid level so speculars read as Lusion's soft
-      // star glint instead of a hard rectangular blob (FFT kernel approx).
-      if (!isMobileBloom && u === 0) w *= 0.35
-      if (!isMobileBloom && u >= 3) w *= 1.25
+      // Soften sharpest mips — FFT star kernel spreads specular energy wide.
+      if (!isMobileBloom && u === 0) w *= 0.2
+      if (!isMobileBloom && u === 1) w *= 0.55
+      if (!isMobileBloom && u >= 3) w *= 1.35
       bloomWeights[u] = w
     }
 

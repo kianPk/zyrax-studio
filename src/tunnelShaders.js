@@ -306,7 +306,9 @@ ${astronautCommonBody}
   // Exact Lusion bloom alpha (NOT 1.0 — alpha drives Stage3D bloom)
   gl_FragColor.a = 0.01 + 0.1 * max(0.0, gl_FragColor.g - 1.0 + metalness * 0.2) * (0.5 + metalness * 1.5)
     + gl_FragColor.b * u_blackTunnelRatio * dot(vec3(0.299, 0.587, 0.114), blackTunnelColor) * 5.0;
-  gl_FragColor.a += metalShininess;
+  // Soft-compress metalShininess — Lusion FFT bloom spreads specular energy;
+  // raw += metalShininess blows a rectangular hotspot through our gaussian path.
+  gl_FragColor.a += metalShininess / (1.0 + metalShininess);
   gl_FragColor.a *= (0.5 + fresnel * 0.9);
 #endif
 }
