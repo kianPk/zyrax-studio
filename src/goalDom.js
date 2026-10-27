@@ -16,7 +16,7 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
   titleLines.forEach((line) => {
     if (line.querySelector('.goal-word')) return
     const words = line.textContent.replace(/\s+/g, ' ').trim().split(' ')
-    line.innerHTML = words.map((w) => `<span class="goal-word">${w}</span>`).join('')
+    line.innerHTML = words.map((w) => `<span class="goal-word">${w}</span>`).join(' ')
   })
 
   const ranges = createGoalRanges(sectionEl)
