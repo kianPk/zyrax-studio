@@ -25,6 +25,7 @@ import { createTunnelPost } from './tunnelPost.js'
 import { BrownianMotion, SecondOrderDynamics, Simple1DNoise } from './lusionMotion.js'
 import { easeSineInOut } from './scrollMath.js'
 import { createWhiteTunnelExtras } from './whiteTunnelExtras.js'
+import { createBrokenGlass } from './brokenGlass.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
@@ -893,6 +894,15 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   // Lusion Stage3D bloom + halo RGB-shift (chromatic rings / glow)
   const post = createTunnelPost(renderer, scene, camera, { isMobile })
 
+  // Shattered glass pane at whiteFrameBreak (astronaut punches through)
+  let brokenGlass = null
+  try {
+    brokenGlass = await createBrokenGlass(scene, { base })
+    post.setGlassPass(brokenGlass)
+  } catch (err) {
+    console.warn('Broken glass failed to load', err)
+  }
+
   const resize = () => {
     // Prefer the screen clip while tablet-windowed so the drawing buffer
     // matches the visible hole (not the full device shell including bezel).
@@ -975,6 +985,24 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       isBlackTunnelActive,
       isMobile,
     })
+
+    // GoalTunnelGlass — shatter as whiteFrameBreak progresses
+    if (brokenGlass) {
+      const imgOut = sectionEl.querySelector('#home-goal-image-out')
+      const outRect = imgOut?.getBoundingClientRect()
+      const frameH =
+        outRect && outRect.height > 8 ? outRect.height : stickyEl?.clientHeight || vh
+      // After whiteFrameOut the desktop frame is full-bleed; scale≈1, no tilt
+      const frameScale = fit(whiteFrameOutRatio, 0, 1, 1.15, 1)
+      const frameRotation = fit(whiteFrameOutRatio, 0, 1, -0.12, 0)
+      brokenGlass.updateFromScroll({
+        whiteFrameBreakRatio: whiteFrameBreak,
+        astronautDropRatio,
+        frameHeight: frameH,
+        frameRotation,
+        frameScale,
+      })
+    }
 
     sharedUniforms.u_whiteTunnelRatio.value = whiteTunnelRatio
     sharedUniforms.u_showRatio.value = showRatio
@@ -1554,10 +1582,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     updateScroll,
     tickFrame: tickFrameExternal,
     getAutoScrollSpeed: () => autoScrollSpeed,
+    getGlassRatio: () => brokenGlass?.ratio ?? 0,
+    getAstronautDropRatio: () => astronautDropRatio,
+    getWhiteTunnelRatio: () => whiteTunnelRatio,
     destroy() {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
       window.removeEventListener('scroll', onScroll)
+      brokenGlass?.dispose()
       feedbackRT.dispose()
       feedbackRT2.dispose()
       post.destroy()

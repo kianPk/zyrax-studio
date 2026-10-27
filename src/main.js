@@ -143,6 +143,14 @@ gsap.ticker.add((time) => {
   scrollLines?.update()
   goalTunnel?.tickFrame?.(dt)
   siteAudio.update(dt)
+  if (goalTunnel?.getAstronautDropRatio) {
+    siteAudio.syncTunnelAudio({
+      blackFrameInRatio: goalSection?.dataset?.goalPhase === 'window' ? 0 : 1,
+      blackTunnelRatio: goalSection?.dataset?.goalPhase === 'black-tunnel' ? 1 : 0,
+      whiteTunnelRatio: goalTunnel.getWhiteTunnelRatio?.() ?? 0,
+      astronautDropRatio: goalTunnel.getAstronautDropRatio() ?? 0,
+    })
+  }
 })
 gsap.ticker.lagSmoothing(0)
 
@@ -155,6 +163,12 @@ lenis.on('scroll', () => {
   if (phase && phase !== lastGoalPhase) {
     lastGoalPhase = phase
     siteAudio.syncGoalPhase(phase)
+  }
+  if (goalTunnel?.getAstronautDropRatio) {
+    siteAudio.syncTunnelAudio({
+      whiteTunnelRatio: goalTunnel.getWhiteTunnelRatio?.() ?? 0,
+      astronautDropRatio: goalTunnel.getAstronautDropRatio() ?? 0,
+    })
   }
   if (!homeHero) return
   const rect = homeHero.getBoundingClientRect()

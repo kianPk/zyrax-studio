@@ -47,7 +47,7 @@ export function createSiteAudio() {
   let fadeTo = null
   let fadeT = 1
   let fadeDur = 1.2
-  const sfxIdx = { hover: 0, click: 0, focus: 0, page: 0 }
+  const sfxIdx = { hover: 0, click: 0, focus: 0, page: 0, glass: 0 }
 
   const unlock = async () => {
     if (unlocked) return
@@ -72,7 +72,7 @@ export function createSiteAudio() {
     const i = sfxIdx[kind] % list.length
     sfxIdx[kind] = i + 1
     const a = list[i].cloneNode()
-    a.volume = kind === 'focus' ? 0.4 : 0.85
+    a.volume = kind === 'focus' ? 0.4 : kind === 'glass' ? 1 : 0.85
     a.play().catch(() => {})
   }
 
@@ -130,6 +130,8 @@ export function createSiteAudio() {
     }
   }
 
+  let brokenGlassStep = 0
+
   /** Map goal phase → Lusion music bed */
   const syncGoalPhase = (phase) => {
     if (!enabled) return
@@ -137,6 +139,37 @@ export function createSiteAudio() {
     else if (phase === 'title' || phase === 'black-tunnel') fadeToMusic('cinematic_0', 1.4)
     else if (phase === 'white') fadeToMusic('cinematic_3', 1.6)
     else fadeToMusic('generic', 1.2)
+  }
+
+  /**
+   * Lusion HomePageAudios glass + end bed:
+   * arm glass SFX on the rising edge of astronautDrop, then generic_end.
+   */
+  const syncTunnelAudio = ({
+    blackFrameInRatio = 0,
+    blackTunnelRatio = 0,
+    whiteTunnelRatio = 0,
+    astronautDropRatio = 0,
+  } = {}) => {
+    if (!enabled) return
+    if (blackFrameInRatio > 0.5 && blackTunnelRatio === 0) {
+      brokenGlassStep = 0
+      fadeToMusic('cinematic_0', 0.8)
+    } else if (blackTunnelRatio > 0 && whiteTunnelRatio === 0) {
+      brokenGlassStep = 0
+      fadeToMusic('cinematic_0', 0.8)
+    } else if (whiteTunnelRatio > 0 && astronautDropRatio <= 0.8) {
+      fadeToMusic('cinematic_3', 0.8)
+    } else if (whiteTunnelRatio > 0 && astronautDropRatio > 0.8) {
+      fadeToMusic('generic_end', 1.0)
+    }
+
+    if (astronautDropRatio === 0) {
+      brokenGlassStep = 1
+    } else if (brokenGlassStep === 1) {
+      playSfx('glass')
+      brokenGlassStep = 2
+    }
   }
 
   btn?.addEventListener('click', async () => {
@@ -161,6 +194,7 @@ export function createSiteAudio() {
   return {
     update,
     syncGoalPhase,
+    syncTunnelAudio,
     playSfx,
     setEnabled,
     get enabled() {

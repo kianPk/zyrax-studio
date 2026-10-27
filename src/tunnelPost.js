@@ -174,8 +174,11 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
   let isMobileBloom = !!isMobile
 
   let sceneRT = makeRT(1, 1, true)
+  let glassBgRT = makeRT(1, 1, false)
   let efxRT = makeRT(1, 1, false)
   let highPassRT = makeRT(1, 1, false)
+  /** Optional: (api) => void — draw GoalTunnelGlass into the scene RT */
+  let glassPass = null
   const blurH = []
   const blurV = []
   for (let i = 0; i < ITERATION; i++) {
@@ -313,6 +316,7 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     // Mobile: half-res scene + efx buffers — biggest GPU win for scroll smoothness
     const sceneScale = isMobileBloom ? 0.5 : 1
     sceneRT.setSize(Math.max(1, Math.floor(w * sceneScale)), Math.max(1, Math.floor(h * sceneScale)))
+    glassBgRT.setSize(sceneRT.width, sceneRT.height)
     efxRT.setSize(sceneRT.width, sceneRT.height)
     // Lusion Bloom (non-FFT path): high-pass + pyramid start at half-res
     // Desktop Lusion uses FFT at powerTwoCeiling(half)>>1 — we keep half-res pyramid
@@ -456,8 +460,37 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     renderer.clear()
     const prevBg = scene.background
     scene.background = null
+    // Hide glass for the base scene pass — drawn as a refraction overlay next
+    const glassMesh = glassPass?.mesh
+    const glassWasVisible = !!glassMesh?.visible
+    if (glassWasVisible) glassMesh.visible = false
     renderer.render(scene, camera)
     scene.background = prevBg
+
+    // 1b) GoalTunnelGlass — refract the just-rendered scene (Lusion preUfx)
+    if (glassPass?.active && glassPass.overlayScene) {
+      for (let i = 0; i < ITERATION; i++) {
+        bloomWeights[i] = 0
+        compositeMat.uniforms[`u_blurTexture${i}`].value = sceneRT.texture
+      }
+      compositeMat.uniforms.u_texture.value = sceneRT.texture
+      compositeMat.uniforms.u_saturation.value = 1
+      const prevPaint = compositeMat.uniforms.u_scrollPaint.value
+      compositeMat.uniforms.u_scrollPaint.value = 0
+      blit(compositeMat, glassBgRT)
+      compositeMat.uniforms.u_scrollPaint.value = prevPaint
+
+      glassPass.setBackground(glassBgRT.texture, glassBgRT.width, glassBgRT.height)
+      glassPass.syncToCamera(camera, h)
+      if (glassMesh) glassMesh.visible = true
+      renderer.setRenderTarget(sceneRT)
+      renderer.autoClear = false
+      renderer.clearDepth()
+      renderer.render(glassPass.overlayScene, camera)
+      renderer.autoClear = true
+    } else if (glassWasVisible && glassMesh) {
+      glassMesh.visible = false
+    }
 
     // 2) GoalTunnelEfx velocity blur
     let fromTex = sceneRT.texture
@@ -588,6 +621,9 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     render,
     setEfxOffset,
     markEfxSync,
+    setGlassPass(api) {
+      glassPass = api || null
+    },
     setEfxAmount(v) {
       efxAmount = v
     },
@@ -605,6 +641,7 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     },
     destroy() {
       sceneRT.dispose()
+      glassBgRT.dispose()
       efxRT.dispose()
       highPassRT.dispose()
       blurH.forEach((r) => r.dispose())
