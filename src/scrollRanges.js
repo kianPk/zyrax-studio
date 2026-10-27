@@ -5,11 +5,24 @@
 import {
   fit,
   clamp,
+  cUnMix,
   easeCubicIn,
   easeCubicInOut,
+  easeExpoIn,
+  easeSineIn,
+  easeSineOut,
 } from './scrollMath.js'
 
-export { fit, clamp, easeCubicIn, easeCubicInOut }
+export {
+  fit,
+  clamp,
+  cUnMix,
+  easeCubicIn,
+  easeCubicInOut,
+  easeExpoIn,
+  easeSineIn,
+  easeSineOut,
+}
 
 export function easeCubicOut(t) {
   return 1 - Math.pow(1 - t, 3)

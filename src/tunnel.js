@@ -3,15 +3,30 @@ import { loadBuf } from './bufLoader.js'
 import {
   createGoalRanges,
   fit,
+  cUnMix,
   easeCubicIn,
+  easeCubicInOut,
+  easeExpoIn,
+  easeSineIn,
   easeBackInOut,
   easeQuartIn,
   smoothstep,
 } from './scrollRanges.js'
+import {
+  blackTunnelVert,
+  blackTunnelFrag,
+  whiteTunnelVert,
+  whiteTunnelFrag,
+  astronautWhiteFrag,
+  astronautBlackFrag,
+} from './tunnelShaders.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
+const GRID_SIZE = 20
 const PARTS = ['helmet', 'helmet_glass', 'glove_shoes', 'wearpack']
+const BLACK_COLOR_1 = ['#0d2b27', '#ba0000', '#00b5a6', '#0099ff']
+const BLACK_COLOR_2 = ['#8c8c8c', '#008e6b', '#7e7f05', '#ff0000']
 
 function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -54,6 +69,13 @@ function makeDataTex(data, w, h) {
   tex.flipY = false
   tex.needsUpdate = true
   return tex
+}
+
+function toFloat3Attr(src) {
+  const arr = src.array
+  const out = new Float32Array(arr.length)
+  for (let i = 0; i < arr.length; i++) out[i] = arr[i]
+  return new THREE.InstancedBufferAttribute(out, 3)
 }
 
 const astronautVert = /* glsl */ `
@@ -132,80 +154,6 @@ void main() {
 }
 `
 
-const astronautFrag = /* glsl */ `
-uniform sampler2D u_armbTexture;
-uniform sampler2D u_norTexture;
-uniform sampler2D u_matcapTexture;
-uniform sampler2D u_envTexture;
-uniform vec3 u_ambientColor;
-uniform vec3 u_bgColor;
-uniform vec3 u_sunPosition;
-uniform float u_showRatio;
-uniform float u_whiteTunnelRatio;
-uniform float u_frameOutRatio;
-varying vec3 v_worldPosition;
-varying vec4 v_worldTangent;
-varying vec3 v_worldNormal;
-varying vec2 v_uv;
-varying float v_ao;
-varying vec3 v_viewPosition;
-
-float linearStep(float edge0, float edge1, float x) {
-  return clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-}
-#ifndef saturate
-#define saturate(a) clamp(a, 0.0, 1.0)
-#endif
-
-void main() {
-  vec3 worldNormal = normalize(v_worldNormal);
-  vec3 worldTangent = normalize(v_worldTangent.xyz);
-  vec3 worldBinormal = normalize(cross(worldNormal, worldTangent)) * -v_worldTangent.w;
-  worldTangent = normalize(cross(worldBinormal, worldNormal));
-  vec3 tangentSpaceNormal = normalize(texture2D(u_norTexture, v_uv).xyz - 0.5);
-  worldNormal = normalize(
-    tangentSpaceNormal.x * worldTangent +
-    tangentSpaceNormal.y * worldBinormal +
-    tangentSpaceNormal.z * worldNormal
-  );
-  vec4 armb = texture2D(u_armbTexture, v_uv);
-  float ao = clamp(v_ao * max(armb.r, 0.15), 0.0, 1.0);
-  float roughness = armb.g;
-  float metalness = armb.b;
-  float albedo = max(armb.a, 0.12);
-  vec3 N = worldNormal;
-
-  vec3 viewDir = normalize(v_worldPosition);
-  vec3 x = normalize(vec3(viewDir.z, 0.0, -viewDir.x));
-  vec3 y = cross(viewDir, x);
-  vec2 uv = vec2(dot(x, worldNormal), dot(y, worldNormal)) * 0.495 + 0.5;
-
-  float zAxisShading = linearStep(-0.2, 1.3, worldNormal.z) * (0.65 + ao * 0.35);
-  float outOfFrameRatio = linearStep(0.35, 1.0, u_frameOutRatio);
-  vec3 L = normalize(u_sunPosition - v_worldPosition);
-  float sunNdL = saturate(dot(N, L));
-  float matcapSample = texture2D(u_matcapTexture, uv).r;
-  float matcapShading = 0.35 + 0.65 * (1.0 - matcapSample);
-  float metalMask = 1.0 - metalness;
-
-  // base suit albedo (grayscale map) with cooler ambient like Lusion
-  vec3 color = vec3(albedo * matcapShading);
-  color += 0.55 * zAxisShading * albedo;
-  color *= u_ambientColor * (0.75 + sunNdL * 0.55);
-  color *= metalMask * 0.92 + 0.08;
-  color += metalMask * (0.28 + 0.35 * sunNdL) * albedo;
-  color *= 0.55 + 0.45 * ao;
-  // subtle env reflection on metals / helmet edges
-  color += (0.25 + 0.75 * metalness) * texture2D(u_envTexture, uv).rgb * 0.35 * outOfFrameRatio;
-  // rim light so silhouette reads against white tunnel
-  float rim = pow(1.0 - saturate(abs(dot(N, normalize(cameraPosition - v_worldPosition)))), 2.0);
-  color += rim * 0.22 * vec3(0.75, 0.82, 0.95);
-
-  gl_FragColor.rgb = mix(u_bgColor, color, vec3(clamp(u_showRatio, 0.15, 1.0)));
-  gl_FragColor.a = 1.0;
-}
-`
-
 const glassFrag = /* glsl */ `
 uniform vec3 u_bgColor;
 uniform float u_showRatio;
@@ -222,82 +170,11 @@ void main() {
 }
 `
 
-const blockVert = /* glsl */ `
-attribute float a_instanceId;
-uniform float u_ratio;
-uniform float u_ratioInverse;
-varying vec3 v_worldNormal;
-varying vec2 v_uv;
-varying float v_fog;
-varying float v_lengthRatio;
-
-vec3 deform(in vec3 pos) {
-  float blockCount = float(BLOCK_COUNT);
-  float ratio = mix(0.1, 1.0, u_ratioInverse);
-  float lengthRatio = -pos.z / blockCount;
-  float scalar = mix(0.25, ratio, lengthRatio);
-  pos.x *= 1.0 + scalar * 0.5 * sin(lengthRatio * 6.283184);
-  pos.y *= 1.0 + scalar * 0.5 * cos(lengthRatio * 6.283184 + 3.1415926);
-  float angleRatio = smoothstep(0.25, 1.0, u_ratioInverse);
-  float angle = (angleRatio + angleRatio * lengthRatio * lengthRatio) * -6.283184;
-  float s = sin(angle);
-  float c = cos(angle);
-  mat2 m = mat2(c, -s, s, c);
-  pos.xy = m * pos.xy;
-  pos.y += ratio * sin(ratio * lengthRatio * 3.141592 * 4.0) * 0.25;
-  pos.z -= (cos(ratio * 1.5 + (1.0 - ratio) * lengthRatio * 3.141592 * 0.5) * 0.5 + 0.5 - 1.0) * blockCount;
-  pos.z *= 1.0 + 16.0 * (ratio * lengthRatio * lengthRatio) + 2.0 * ratio * (sin(8.0 * lengthRatio) * 0.5 + 0.5);
-  pos.z *= (1.0 - ratio * ratio * ratio) * 0.9 + 0.1;
-  pos.z += blockCount / 4.0;
-  return pos * 15.0;
-}
-vec3 inverseTransformDirection(in vec3 dir, in mat4 matrix) {
-  return normalize((vec4(dir, 0.0) * matrix).xyz);
-}
-void main() {
-  float blockCount = float(BLOCK_COUNT);
-  vec3 pos = position;
-  pos.z -= a_instanceId;
-  pos.z /= blockCount;
-  float lengthRatio = -pos.z;
-  pos.z *= blockCount;
-  v_lengthRatio = lengthRatio;
-  vec3 nor = deform(pos + normal * 0.01);
-  pos = deform(pos);
-  nor = normalize(nor - pos);
-  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-  v_fog = -0.005 * mvPosition.z / mvPosition.w;
-  gl_Position = projectionMatrix * mvPosition;
-  v_worldNormal = inverseTransformDirection(normalMatrix * nor, viewMatrix);
-  v_uv = uv;
-}
-`
-
-const blockFrag = /* glsl */ `
-uniform sampler2D u_texture;
-uniform float u_ratioInverse;
-varying vec3 v_worldNormal;
-varying vec2 v_uv;
-varying float v_fog;
-varying float v_lengthRatio;
-void main() {
-  vec3 N = normalize(v_worldNormal);
-  vec4 tex = texture2D(u_texture, v_uv);
-  float shade = 0.55 + 0.45 * abs(N.y);
-  vec3 color = tex.rgb * shade;
-  color = mix(color, vec3(0.92, 0.93, 0.95), 0.15);
-  float fog = smoothstep(0.0, 1.2, v_fog + v_lengthRatio * 0.35);
-  color = mix(color, vec3(0.94), fog * 0.65);
-  float alpha = mix(1.0, 0.35, fog) * mix(0.4, 1.0, u_ratioInverse);
-  gl_FragColor = vec4(color, alpha);
-}
-`
-
 export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
   const base = import.meta.env.BASE_URL
+  const useHd = !isMobile
 
-  // --- load assets first (before allocating a second WebGL context) ---
   const [
     animGeo,
     inAnim,
@@ -307,6 +184,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blockTex,
     blockBase,
     blockWall,
+    gridBaseLd,
+    gridStructureLd,
+    gridBaseHd,
+    gridStructureHd,
+    greebleNor,
     ...partGeos
   ] = await Promise.all([
     loadBuf(`${base}assets/models/tunnels/astronaut_animations.buf`),
@@ -317,13 +199,24 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     new THREE.TextureLoader().loadAsync(`${base}assets/textures/tunnels/white_block.webp`),
     loadBuf(`${base}assets/models/tunnels/tunnel_block_base.buf`),
     loadBuf(`${base}assets/models/tunnels/tunnel_block_wall.buf`),
+    loadBuf(`${base}assets/models/tunnels/grid_base_ld.buf`),
+    loadBuf(`${base}assets/models/tunnels/grid_structure_ld.buf`),
+    useHd
+      ? loadBuf(`${base}assets/models/tunnels/grid_base_hd.buf`)
+      : Promise.resolve(null),
+    useHd
+      ? loadBuf(`${base}assets/models/tunnels/grid_structure_hd.buf`)
+      : Promise.resolve(null),
+    new THREE.TextureLoader().loadAsync(`${base}assets/textures/tunnels/grids/greeble_nor.webp`),
     ...PARTS.map((p) => loadBuf(`${base}assets/models/tunnels/astronaut_${p}.buf`)),
   ])
 
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0xf0f1fa)
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400)
-  camera.position.set(0, 0, 28)
+  scene.background = new THREE.Color(0x000000)
+  // Lusion GoalTunnels Stage3D: defaultCamera (0,0,25) → lookAt (0,0,24), fov ~30
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 400)
+  camera.position.set(0, 0, 25)
+  camera.lookAt(0, 0, 24)
 
   let renderer
   try {
@@ -338,9 +231,10 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     console.error('Goal WebGL unavailable', err)
     throw err
   }
-  renderer.setClearColor(0xf0f1fa, 1)
+  renderer.setClearColor(0x000000, 1)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
   renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.autoClear = true
 
   matcap.colorSpace = THREE.NoColorSpace
   envMap.colorSpace = THREE.SRGBColorSpace
@@ -370,7 +264,6 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const animPosTex = makeDataTex(posRGBA, texW, texH)
   const animOriTex = makeDataTex(oriRGBA, texW, texH)
 
-  // instance attrs (single hero astronaut)
   const instancePos = new THREE.InstancedBufferAttribute(new Float32Array([0, 0, 18]), 3)
   instancePos.setUsage(THREE.DynamicDrawUsage)
   const instanceOrient = new THREE.InstancedBufferAttribute(new Float32Array([0, 0, 0, 1]), 4)
@@ -380,6 +273,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const blend2 = new THREE.InstancedBufferAttribute(new Float32Array([90, 91, 0]), 3)
   blend2.setUsage(THREE.DynamicDrawUsage)
 
+  // feedback + astronaut env (Lusion copies black tunnel RT → blur → astronaut)
+  const feedbackRT = new THREE.WebGLRenderTarget(1, 1, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+  })
+  feedbackRT.texture.wrapS = feedbackRT.texture.wrapT = THREE.MirroredRepeatWrapping
+
   const sharedUniforms = {
     u_animationPositionTexture: { value: animPosTex },
     u_animationOrientTexture: { value: animOriTex },
@@ -388,14 +289,24 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     u_matcapTexture: { value: matcap },
     u_envTexture: { value: envMap },
     u_ambientColor: { value: new THREE.Color('#566d80') },
-    u_bgColor: { value: new THREE.Color('#f0f1fa') },
+    u_bgColor: { value: new THREE.Color('#000000') },
     u_sunPosition: { value: new THREE.Vector3(-20, 0, 22) },
     u_showRatio: { value: 0 },
     u_whiteTunnelRatio: { value: 0 },
     u_frameOutRatio: { value: 0 },
+    u_tintColor: { value: new THREE.Color(0, 0, 0) },
+    u_time: { value: 0 },
   }
 
-  // textures per part
+  const blackAstroUniforms = {
+    u_blackTunnelTexture: { value: feedbackRT.texture },
+    u_sunFactor: { value: 1 },
+    u_blackTunnelRatio: { value: 0 },
+    u_offsetZ: { value: 0 },
+    u_frameIn: { value: 0 },
+    u_endRatio: { value: 0 },
+  }
+
   const partTex = {}
   await Promise.all(
     ['helmet', 'glove_shoes', 'wearpack'].map(async (part) => {
@@ -417,6 +328,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
   const astronautRoot = new THREE.Group()
   scene.add(astronautRoot)
+  const astronautMeshes = []
 
   PARTS.forEach((part, idx) => {
     const geo = partGeos[idx]
@@ -431,27 +343,49 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
     const texKey = part === 'helmet_glass' || part === 'card' ? 'helmet' : part
     const isGlass = part === 'helmet_glass'
-    const uniforms = {
+    const whiteUniforms = {
       ...sharedUniforms,
       u_armbTexture: { value: partTex[texKey].armb },
       u_norTexture: { value: partTex[texKey].nor },
     }
-    const mat = new THREE.ShaderMaterial({
-      uniforms,
+    const blackUniformsAstro = {
+      ...sharedUniforms,
+      ...blackAstroUniforms,
+      u_armbTexture: { value: partTex[texKey].armb },
+      u_norTexture: { value: partTex[texKey].nor },
+    }
+    const whiteMat = new THREE.ShaderMaterial({
+      uniforms: whiteUniforms,
       vertexShader: astronautVert,
-      fragmentShader: isGlass ? glassFrag : astronautFrag,
+      fragmentShader: isGlass ? glassFrag : astronautWhiteFrag,
       transparent: isGlass,
       side: THREE.DoubleSide,
-      defines: { BONE_COUNT },
+      defines: { BONE_COUNT, ...(isGlass ? { IS_HELMET_GLASS: true } : {}) },
     })
-    const mesh = new THREE.Mesh(ig, mat)
+    const blackMat = new THREE.ShaderMaterial({
+      uniforms: blackUniformsAstro,
+      vertexShader: astronautVert,
+      fragmentShader: isGlass ? glassFrag : astronautBlackFrag,
+      transparent: isGlass,
+      side: THREE.DoubleSide,
+      defines: { BONE_COUNT, IS_BLACK: true },
+    })
+    const mesh = new THREE.Mesh(ig, whiteMat)
     mesh.frustumCulled = false
+    mesh.userData.whiteMat = whiteMat
+    mesh.userData.blackMat = blackMat
     astronautRoot.add(mesh)
+    astronautMeshes.push(mesh)
   })
 
-  // white tunnel blocks
+  // —— White tunnel (Lusion GoalWhiteTunnel) ——
   const tunnelGroup = new THREE.Group()
   scene.add(tunnelGroup)
+  const fbmPos = new THREE.Vector3()
+  let tunnelTime = 0
+  let tunnelDeltaTime = 1
+  let lastScrollY = typeof window !== 'undefined' ? window.scrollY : 0
+  let scrollDir = 1
 
   const makeBlockMesh = (geo, isWall) => {
     const ig = new THREE.InstancedBufferGeometry()
@@ -466,11 +400,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         u_texture: { value: blockTex },
         u_ratio: { value: 0 },
         u_ratioInverse: { value: 1 },
+        u_fbm: { value: fbmPos },
+        u_time: { value: 0 },
       },
-      vertexShader: blockVert,
-      fragmentShader: blockFrag,
+      vertexShader: whiteTunnelVert,
+      fragmentShader: whiteTunnelFrag,
       transparent: true,
-      defines: { BLOCK_COUNT, ...(isWall ? { IS_WALL: 1 } : {}) },
+      extensions: { derivatives: true },
+      defines: { BLOCK_COUNT, ...(isWall ? { IS_WALL: true } : {}) },
     })
     const mesh = new THREE.Mesh(ig, mat)
     mesh.frustumCulled = false
@@ -480,36 +417,93 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const baseMat = makeBlockMesh(blockBase, false)
   const wallMat = makeBlockMesh(blockWall, true)
 
-  // soft fill plane — switches black↔white across phases
-  const bgMatPlane = new THREE.MeshBasicMaterial({ color: 0x0b0b12 })
-  const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), bgMatPlane)
-  bgPlane.position.z = -50
+  const bgMatPlane = new THREE.MeshBasicMaterial({ color: 0x000000 })
+  const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), bgMatPlane)
+  bgPlane.position.z = -80
   scene.add(bgPlane)
 
-  // black-tunnel depth rings (lightweight stand-in for greeble grid)
+  // —— Black tunnel (Lusion GoalBlackTunnel grid_ld + grid_hd) ——
   const blackTunnelGroup = new THREE.Group()
   scene.add(blackTunnelGroup)
-  const ringGeo = new THREE.TorusGeometry(6.2, 0.045, 8, 48)
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x2a3344,
-    transparent: true,
-    opacity: 0.55,
-  })
-  for (let i = 0; i < 28; i++) {
-    const ring = new THREE.Mesh(ringGeo, ringMat)
-    ring.position.z = -i * 3.2
-    ring.rotation.x = Math.PI / 2
-    blackTunnelGroup.add(ring)
-  }
-  const streakMat = new THREE.MeshBasicMaterial({ color: 0x5a90ff, transparent: true, opacity: 0.08 })
-  for (let i = 0; i < 12; i++) {
-    const streak = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 70), streakMat)
-    const a = (i / 12) * Math.PI * 2
-    streak.position.set(Math.cos(a) * 5.6, Math.sin(a) * 5.6, -35)
-    blackTunnelGroup.add(streak)
+
+  const greebleArmb = await makeArmbTexture(
+    `${base}assets/textures/tunnels/grids/greeble_arm.webp`,
+    `${base}assets/textures/tunnels/grids/greeble_base.webp`
+  )
+  greebleArmb.wrapS = greebleArmb.wrapT = THREE.RepeatWrapping
+  greebleNor.colorSpace = THREE.NoColorSpace
+  greebleNor.flipY = false
+  greebleNor.wrapS = greebleNor.wrapT = THREE.RepeatWrapping
+
+  const blackUniforms = {
+    u_time: { value: 0 },
+    u_showRatio: { value: 0 },
+    u_offsetZ: { value: 0 },
+    u_blackTunnelTransformRatio: { value: 0 },
+    u_feedbackTexture: { value: feedbackRT.texture },
+    u_greebleArmbTexture: { value: greebleArmb },
+    u_greebleNormalTexture: { value: greebleNor },
+    u_resolution: { value: new THREE.Vector2(1, 1) },
+    u_outRatio: { value: 0 },
+    u_outBloomFromToStrength: { value: new THREE.Vector3(0, 70, 0) },
+    u_color1: { value: new THREE.Color(BLACK_COLOR_1[0]) },
+    u_color2: { value: new THREE.Color(BLACK_COLOR_2[0]) },
   }
 
-  // title DOM owned by goalDom.js — do not re-split words here
+  const makeBlackGridMesh = (baseGeo, structureGeo, isHd) => {
+    const ig = new THREE.InstancedBufferGeometry()
+    for (const key in baseGeo.attributes) ig.setAttribute(key, baseGeo.attributes[key])
+    if (baseGeo.index) ig.setIndex(baseGeo.index)
+    const vCount = baseGeo.attributes.position.count
+    if (!ig.getAttribute('ao')) {
+      ig.setAttribute('ao', new THREE.BufferAttribute(new Float32Array(vCount).fill(1), 1))
+    }
+    if (!ig.getAttribute('areaRatio')) {
+      ig.setAttribute('areaRatio', new THREE.BufferAttribute(new Float32Array(vCount), 1))
+    }
+    if (!ig.getAttribute('height')) {
+      ig.setAttribute('height', new THREE.BufferAttribute(new Float32Array(vCount).fill(1), 1))
+    }
+    if (!ig.getAttribute('cluster')) {
+      ig.setAttribute('cluster', new THREE.BufferAttribute(new Float32Array(vCount), 1))
+    }
+    ig.setAttribute('instancePos', toFloat3Attr(structureGeo.attributes.position))
+    ig.setAttribute('instanceGridIds', toFloat3Attr(structureGeo.attributes.gridIds))
+    ig.setAttribute('instanceAxis', toFloat3Attr(structureGeo.attributes.rotAxis))
+    ig.instanceCount = structureGeo.attributes.position.count
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: blackUniforms,
+      vertexShader: blackTunnelVert,
+      fragmentShader: blackTunnelFrag,
+      side: THREE.DoubleSide,
+      transparent: true,
+      depthWrite: false,
+      defines: { GRID_SIZE, ...(isHd ? { IS_HD: true } : {}) },
+    })
+    const mesh = new THREE.Mesh(ig, mat)
+    mesh.frustumCulled = false
+    mesh.renderOrder = isHd ? 2 : 1
+    blackTunnelGroup.add(mesh)
+    return mesh
+  }
+
+  makeBlackGridMesh(gridBaseLd, gridStructureLd, false)
+  if (useHd && gridBaseHd && gridStructureHd) {
+    makeBlackGridMesh(gridBaseHd, gridStructureHd, true)
+  }
+
+  let blackPulseTime = 0
+  let blackLinearTime = 0
+  let cameraDollyZoomFovOffset = 0
+  let cameraDistance = 25
+  // Brownian-ish motion state (Lusion astronaut shake)
+  const motionPos = new THREE.Vector3()
+  const motionEuler = new THREE.Euler()
+  const motionQ = new THREE.Quaternion()
+  const tmpQ = new THREE.Quaternion()
+  const colorA = new THREE.Color()
+  const colorB = new THREE.Color()
 
   const stickyEl = canvas.parentElement || sectionEl
   const ranges = createGoalRanges(sectionEl)
@@ -517,7 +511,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let showRatio = 0
   let blackTitleRatio = 0
   let blackTunnelRatio = 0
+  let blackFrameInRatio = 0
+  let whiteFrameBreak = 0
+  let whiteFrameRatio = 0
   let astronautDropRatio = 0
+  let isBlackTitleActive = true
+  let isBlackTunnelActive = false
+  let isWhiteTunnelActive = false
   let animationTime = 0
   let raf = 0
   let last = performance.now()
@@ -530,6 +530,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     camera.aspect = w / Math.max(h, 1)
     camera.updateProjectionMatrix()
     renderer.setSize(w, h, false)
+    blackUniforms.u_resolution.value.set(w, h)
+    const fw = Math.max(1, Math.floor(w * 0.25))
+    const fh = Math.max(1, Math.floor(h * 0.25))
+    if (feedbackRT.width !== fw || feedbackRT.height !== fh) {
+      feedbackRT.setSize(fw, fh)
+    }
   }
   resize()
   window.addEventListener('resize', resize)
@@ -550,30 +556,30 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const updateScroll = () => {
     if (!sectionEl) return
     const vh = window.innerHeight
+    const sy = window.scrollY || 0
+    if (sy !== lastScrollY) {
+      scrollDir = sy > lastScrollY ? 1 : -1
+      lastScrollY = sy
+    }
 
-    // Ratios match Lusion goalTunnels.updateRatios()
-    const blackFrameInRatio = ranges.range('blackFrameIn').ratio
+    blackFrameInRatio = ranges.range('blackFrameIn').ratio
     blackTitleRatio = ranges.range('blackTitle').ratio
     blackTunnelRatio = ranges.range('blackTunnel').ratio
-    const whiteFrameRatio = ranges.range('whiteTunnel').ratio
+    whiteFrameRatio = ranges.range('whiteTunnel').ratio
     whiteTunnelRatio = ranges.between('whiteTunnel', 'whiteFrameOut').ratio
-    const whiteFrameOut = ranges.range('whiteFrameOut').ratio
-    const whiteFrameBreak = ranges.range('whiteFrameBreak').ratio
+    whiteFrameBreak = ranges.range('whiteFrameBreak').ratio
     const whiteTunnelAstronautRatio = ranges.between('whiteTunnel', 'whiteFrameBreak').ratio
-    // Lusion: astronautDropRatio = range(whiteFrameBreak → astronautDrop)
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
 
-    const isBlackTitleActive = blackTitleRatio < 1
-    const isBlackTunnelActive = blackTunnelRatio < 1 && !isBlackTitleActive
-    const isWhiteTunnelActive =
+    isBlackTitleActive = blackTitleRatio < 1
+    isBlackTunnelActive = blackTunnelRatio < 1 && !isBlackTitleActive
+    isWhiteTunnelActive =
       whiteTunnelRatio <= 1 && !isBlackTunnelActive && !isBlackTitleActive
 
-    // showRatio: white tunnel fades astronaut in; black title always visible
+    // Lusion astronaut showRatio
     showRatio = isWhiteTunnelActive
       ? smoothstep(0, 0.15, whiteTunnelAstronautRatio)
-      : isBlackTitleActive || isBlackTunnelActive
-        ? 1
-        : fit(astronautDropRatio, 0, 0.2, 1, 0)
+      : 1
 
     sharedUniforms.u_whiteTunnelRatio.value = whiteTunnelRatio
     sharedUniforms.u_showRatio.value = showRatio
@@ -583,20 +589,25 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     baseMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
     wallMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
 
-    // phase colors
-    const toWhite = fit(whiteTunnelRatio, 0, 0.25, 0, 1)
-    const bg = new THREE.Color().setStyle('#0b0b12').lerp(new THREE.Color('#f0f1fa'), toWhite)
+    // phase colors — pure black / white like Lusion
+    const bg = new THREE.Color(
+      isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
+    )
     bgMatPlane.color.copy(bg)
     scene.background = bg
     renderer.setClearColor(bg, 1)
     sharedUniforms.u_bgColor.value.copy(bg)
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
-    blackTunnelGroup.position.z = fit(blackTunnelRatio, 0, 1, 0, 55)
-    ringMat.opacity =
-      fit(blackTunnelRatio, 0, 0.15, 0, 0.6) * fit(whiteTunnelRatio, 0, 0.4, 1, 0)
 
-    // Path: Lusion updateTransforms — outAnim frames 0–79 then 79–99 on drop
+    // Switch astronaut materials (Lusion white vs black)
+    const useWhiteMat = isWhiteTunnelActive
+    for (const mesh of astronautMeshes) {
+      const next = useWhiteMat ? mesh.userData.whiteMat : mesh.userData.blackMat
+      if (mesh.material !== next) mesh.material = next
+    }
+
+    // Path: Lusion updateTransforms
     let path
     if (isWhiteTunnelActive) {
       const frame =
@@ -606,47 +617,93 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       path = samplePath(outAnim, frame / 99)
       path.p.y -= (isMobile ? 0 : 0.4) * easeBackInOut(astronautDropRatio)
     } else {
-      // inAnim: frame = 100 * cubicIn(blackTitle)
       path = samplePath(inAnim, easeCubicIn(Math.min(blackTitleRatio, 1)))
     }
+
+    // Lusion BrownianMotion shake during black/white tunnel
+    let posAmp = 0
+    let rotAmp = 0
+    let posFreq = 0.2
+    let rotFreq = 0.15
+    if (isBlackTunnelActive) {
+      const I = blackTunnelRatio
+      posFreq = 0.2 + 0.5 * I
+      rotFreq = 0.15
+      posAmp = 5 * I
+      rotAmp = 60 * I
+    } else if (isWhiteTunnelActive) {
+      posFreq = fit(whiteFrameRatio, 0, 0.45, 0.5, 0.2)
+      rotFreq = fit(whiteFrameRatio, 0, 0.45, 0.4, 0.15)
+      posAmp = fit(whiteFrameRatio, 0, 0.75, 5, 0)
+      rotAmp = fit(whiteFrameRatio, 0, 0.75, 15, 0)
+    }
+    motionPos.set(
+      Math.sin(tunnelTime * posFreq * 5.1) * posAmp * 0.08 +
+        Math.sin(tunnelTime * posFreq * 2.3) * posAmp * 0.05,
+      Math.sin(tunnelTime * posFreq * 3.7 + 1.2) * posAmp * 0.08,
+      Math.sin(tunnelTime * posFreq * 4.4 + 0.7) * posAmp * 0.06
+    )
+    motionEuler.set(
+      (Math.sin(tunnelTime * rotFreq * 3.1) * rotAmp * Math.PI) / 180,
+      (Math.sin(tunnelTime * rotFreq * 2.4 + 0.8) * rotAmp * Math.PI) / 180,
+      (Math.sin(tunnelTime * rotFreq * 1.7 + 1.5) * rotAmp * Math.PI) / 180
+    )
+    motionQ.setFromEuler(motionEuler)
+    path.p.add(motionPos)
+    tmpQ.copy(path.q).multiply(motionQ)
+
     instancePos.setXYZ(0, path.p.x, path.p.y, path.p.z)
-    instanceOrient.setXYZW(0, path.q.x, path.q.y, path.q.z, path.q.w)
+    instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
     instancePos.needsUpdate = true
     instanceOrient.needsUpdate = true
     astronautRoot.visible = showRatio > 0.02
 
-    // camera — track astronaut on path (Lusion keeps subject framed)
+    // —— Lusion Stage3D camera: fixed look-forward + dolly-zoom FOV ——
     if (isWhiteTunnelActive) {
-      const dropT = Math.max(whiteTunnelRatio, astronautDropRatio)
-      camera.fov = fit(dropT, 0, 1, 55, 32)
-      // sit behind astronaut along path, look toward them
-      const camZ = path.p.z + fit(dropT, 0, 1, 14, 8)
-      const camY = path.p.y + fit(astronautDropRatio, 0, 1, 0.2, 1.2)
-      camera.position.set(path.p.x * 0.15, camY, camZ)
-      camera.lookAt(path.p.x, path.p.y + 0.3, path.p.z)
+      cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
     } else if (isBlackTunnelActive) {
-      camera.fov = fit(blackTunnelRatio, 0, 1, 50, 32)
-      camera.position.set(
-        path.p.x + Math.sin(blackTunnelRatio * Math.PI * 2) * 0.35,
-        path.p.y + 0.35,
-        path.p.z + fit(blackTunnelRatio, 0, 1, 16, 6)
-      )
-      camera.lookAt(path.p.x, path.p.y + 0.2, path.p.z)
+      cameraDollyZoomFovOffset =
+        Math.sin(blackTunnelRatio * 10 + tunnelTime) *
+        7.5 *
+        smoothstep(0, 0.2, blackTunnelRatio)
+      // container.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
+      blackTunnelGroup.position.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
     } else {
-      // black title — frame in-anim astronaut
-      camera.fov = fit(blackFrameInRatio, 0, 1, 42, 45)
-      camera.position.set(
-        path.p.x * 0.2,
-        path.p.y + 0.4,
-        path.p.z + fit(blackFrameInRatio, 0, 1, 18, 12)
-      )
-      camera.lookAt(path.p.x, path.p.y + 0.2, path.p.z)
+      cameraDollyZoomFovOffset = fit(blackFrameInRatio, 0, 1, 20, 0)
+      blackTunnelGroup.position.z = -80
     }
+
+    const baseFov = 30
+    const fov = baseFov + cameraDollyZoomFovOffset
+    const prevFov = camera.fov || baseFov
+    camera.fov = fov
+    let dist = cameraDistance
+    dist =
+      (dist * Math.tan(((prevFov / 360) * Math.PI) / 2)) /
+        Math.tan(((fov / 360) * Math.PI) / 2) || dist
+    camera.position.set(0, 0, dist)
+    camera.lookAt(0, 0, dist - 1)
+    cameraDistance = dist
     camera.updateProjectionMatrix()
 
-    // title + body copy: owned by goalDom.js (Lusion HomeGoalSectionTunnelTitle)
+    // black astronaut uniforms (scroll-linked)
+    blackAstroUniforms.u_frameIn.value = blackFrameInRatio
+    blackAstroUniforms.u_sunFactor.value = isBlackTunnelActive
+      ? 1 - smoothstep(0.1, 0.2, blackTunnelRatio)
+      : 1
+    blackAstroUniforms.u_blackTunnelRatio.value = isBlackTunnelActive
+      ? smoothstep(0.1, 0.3, blackTunnelRatio)
+      : 0
+    blackAstroUniforms.u_endRatio.value = isBlackTunnelActive
+      ? smoothstep(0.65, 0.9, blackTunnelRatio)
+      : 0
+    blackAstroUniforms.u_offsetZ.value = blackUniforms.u_offsetZ.value
 
-    // sticky viewport visibility (section itself is thousands of vh tall)
+    // tint near drop (Lusion white tint)
+    const tintStrength =
+      fit(astronautDropRatio, 1, 0, 0.2, 1) * (whiteFrameBreak > 0 ? 1 : 0)
+    sharedUniforms.u_tintColor.value.setStyle('#2533c2').multiplyScalar(tintStrength)
+
     const stickyRect = stickyEl.getBoundingClientRect()
     active = stickyRect.bottom > 0 && stickyRect.top < vh
     sectionEl.dataset.goalPhase = isWhiteTunnelActive
@@ -654,6 +711,76 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       : isBlackTunnelActive
         ? 'black-tunnel'
         : 'title'
+  }
+
+  /** Lusion GoalBlackTunnel.update — offsetZ, show, colors, transform */
+  const updateBlackTunnel = (dt) => {
+    if (!isBlackTunnelActive) {
+      blackUniforms.u_showRatio.value = 0
+      return
+    }
+    blackUniforms.u_showRatio.value = easeExpoIn(cUnMix(0, 0.1, blackTunnelRatio))
+
+    const bloom = blackUniforms.u_outBloomFromToStrength.value
+    bloom.z = fit(blackTunnelRatio, 0.65, 0.75, 0, 0.2)
+    bloom.z = fit(blackTunnelRatio, 0.75, 0.85, bloom.z, 0.15)
+    bloom.z = fit(blackTunnelRatio, 0.85, 1, bloom.z, 0.15)
+    bloom.x = fit(blackTunnelRatio, 0.75, 0.85, 20, 60)
+    bloom.x = fit(blackTunnelRatio, 0.9, 1, bloom.x, 30)
+
+    const transformRatio = fit(blackTunnelRatio, 0.6, 1, 0, 1, easeSineIn)
+    blackUniforms.u_blackTunnelTransformRatio.value = transformRatio
+
+    const signedDt = scrollDir * tunnelDeltaTime
+    blackPulseTime +=
+      signedDt * cUnMix(0.1, 0.3, blackTunnelRatio) * fit(transformRatio, 0, 0.25, 1, 0.5)
+    blackLinearTime += signedDt * fit(transformRatio, 0, 0.25, 1.5, 1)
+
+    const f = blackPulseTime
+    const p = Math.floor(f)
+    const g = f - p
+    const offsetZ =
+      (p + easeCubicInOut(g)) * GRID_SIZE +
+      blackLinearTime * GRID_SIZE +
+      blackTunnelRatio * GRID_SIZE * 10
+    blackUniforms.u_offsetZ.value = offsetZ
+    blackAstroUniforms.u_offsetZ.value = offsetZ
+    blackUniforms.u_time.value = tunnelTime
+
+    // color cycling
+    const T = BLACK_COLOR_1.length * fit(blackTunnelRatio, 0.2, 1, 0, 1)
+    const M = Math.floor(T)
+    const S = Math.min(Math.ceil(T), BLACK_COLOR_1.length - 1)
+    const b = T - M
+    const snap = b > 0.5 ? 1 : 0
+    colorA.set(BLACK_COLOR_1[M])
+    colorB.set(BLACK_COLOR_1[S])
+    colorA.lerp(colorB, snap)
+    blackUniforms.u_color1.value.copy(colorA)
+    colorA.set(BLACK_COLOR_2[M])
+    colorB.set(BLACK_COLOR_2[S])
+    colorA.lerp(colorB, snap)
+    blackUniforms.u_color2.value.copy(colorA)
+
+    // FOV pulse also set in updateScroll; reinforce with live time
+    cameraDollyZoomFovOffset =
+      Math.sin(blackTunnelRatio * 10 + tunnelTime) *
+      7.5 *
+      smoothstep(0, 0.2, blackTunnelRatio)
+  }
+
+  const updateWhiteTunnel = (dt) => {
+    if (!isWhiteTunnelActive) return
+    // Approximate Lusion BrownianMotion for white tunnel occlusion sphere
+    fbmPos.set(
+      Math.sin(tunnelTime * 1.1) * 1.4 + Math.sin(tunnelTime * 2.4) * 0.6,
+      Math.cos(tunnelTime * 0.9) * 1.2 + Math.sin(tunnelTime * 1.7) * 0.5,
+      Math.sin(tunnelTime * 1.3 + 0.5) * 0.8
+    )
+    baseMat.uniforms.u_time.value = tunnelTime
+    wallMat.uniforms.u_time.value = tunnelTime
+    baseMat.uniforms.u_fbm.value = fbmPos
+    wallMat.uniforms.u_fbm.value = fbmPos
   }
 
   const onScroll = () => updateScroll()
@@ -665,6 +792,29 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
     if (!active) return
+
+    tunnelDeltaTime = dt
+    tunnelTime += tunnelDeltaTime
+    sharedUniforms.u_time.value = tunnelTime
+
+    updateBlackTunnel(dt)
+    updateWhiteTunnel(dt)
+
+    // keep FOV live during black tunnel pulse
+    if (isBlackTunnelActive) {
+      const baseFov = 30
+      const fov = baseFov + cameraDollyZoomFovOffset
+      const prevFov = camera.fov || baseFov
+      camera.fov = fov
+      let dist = cameraDistance
+      dist =
+        (dist * Math.tan(((prevFov / 360) * Math.PI) / 2)) /
+          Math.tan(((fov / 360) * Math.PI) / 2) || dist
+      camera.position.set(0, 0, dist)
+      camera.lookAt(0, 0, dist - 1)
+      cameraDistance = dist
+      camera.updateProjectionMatrix()
+    }
 
     // bone loop — Lusion updateAnimation
     const r = whiteTunnelRatio
@@ -686,7 +836,6 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blend1.setXYZ(0, I, F, blend)
     blend1.needsUpdate = true
 
-    // linear blend frames 90–139 driven by whiteFrameOut + drop (quartIn)
     const linearFrame = fit(whiteTunnelRatio + drop, 0.9, 2, 90, 139, easeQuartIn)
     const u = Math.floor(linearFrame)
     const f = Math.ceil(linearFrame)
@@ -696,11 +845,31 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     sharedUniforms.u_loopLinearBlend.value =
       fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
 
+    // Feedback: render black tunnel alone into low-res RT for trail + astronaut env
+    if (isBlackTunnelActive) {
+      const prevBg = scene.background
+      astronautRoot.visible = false
+      tunnelGroup.visible = false
+      bgPlane.visible = false
+      scene.background = new THREE.Color(0x000000)
+      renderer.setRenderTarget(feedbackRT)
+      renderer.setClearColor(0x000000, 1)
+      renderer.clear()
+      renderer.render(scene, camera)
+      renderer.setRenderTarget(null)
+      astronautRoot.visible = showRatio > 0.02
+      tunnelGroup.visible = false
+      bgPlane.visible = true
+      scene.background = prevBg
+      blackUniforms.u_feedbackTexture.value = feedbackRT.texture
+      blackAstroUniforms.u_blackTunnelTexture.value = feedbackRT.texture
+    }
+
+    renderer.setClearColor(sharedUniforms.u_bgColor.value, 1)
     renderer.render(scene, camera)
   }
   raf = requestAnimationFrame(tick)
 
-  // first paint after layout
   requestAnimationFrame(() => {
     resize()
     updateScroll()
@@ -714,6 +883,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
       window.removeEventListener('scroll', onScroll)
+      feedbackRT.dispose()
       renderer.dispose()
     },
   }

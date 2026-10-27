@@ -72,11 +72,23 @@ export function easeExpoOut(t) {
   return t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
 }
 
+export function easeExpoIn(t) {
+  return t === 0 ? 0 : Math.pow(1024, t - 1)
+}
+
 export function easeExpoInOut(t) {
   if (t === 0) return 0
   if (t === 1) return 1
   t *= 2
   return t < 1 ? 0.5 * Math.pow(1024, t - 1) : 0.5 * (-Math.pow(2, -10 * (t - 1)) + 2)
+}
+
+export function easeSineIn(t) {
+  return 1 - Math.cos((t * Math.PI) / 2)
+}
+
+export function easeSineOut(t) {
+  return Math.sin((t * Math.PI) / 2)
 }
 
 export function easeCubicIn(t) {
