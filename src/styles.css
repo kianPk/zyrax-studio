@@ -1072,16 +1072,18 @@ button {
     left: auto;
     top: auto;
   }
+  /* Keep nowrap like Lusion — wrapping breaks word-spread offsets during title zoom */
   .home-goal-tunnel-title-line {
-    white-space: normal;
+    white-space: nowrap;
   }
   /* Absolute overlay must stay centered — Lusion's top:0 is for relative grid layout */
   #home-goal-tunnel-title {
     top: 50%;
     left: 50%;
-    font-size: 8.5vw;
-    line-height: 1.05;
-    width: 100%;
+    font-size: 7.2vw;
+    line-height: 1.02;
+    width: 110%;
+    max-width: none;
   }
   #home-featured-title-top,
   .project-list,

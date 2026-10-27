@@ -340,7 +340,7 @@ export function createTunnelPost(renderer, scene, camera) {
     }
     if (isWhiteTunnelActive) hs = 0
     // Portrait: slightly stronger halo so the title-ring reads like Lusion
-    if (isMobile && !isWhiteTunnelActive) hs *= 1.15
+    if (isMobile && !isWhiteTunnelActive) hs *= 1.05
     haloStrength = hs
 
     // bloomSaturation fit(blackTunnelRatio, 0, .7, 1, 3)

@@ -1091,7 +1091,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       efxDeltaZ * transformRatio * 0.01 * efxScale
     )
     post.setEfxAmount(
-      fit(blackTunnelRatio, 0, 0.25, 0.35, 0.85) * (isMobile ? 0.55 : 1)
+      fit(blackTunnelRatio, 0, 0.25, 0.35, 0.85) * (isMobile ? 0.35 : 1)
     )
 
     cameraDollyZoomFovOffset =

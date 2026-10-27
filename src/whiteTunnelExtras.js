@@ -68,8 +68,8 @@ void main(){
   float cycle=floor(t);
   float ratio=fract(t);
   vec4 cycleRands=hash42(vec2(cycle,instanceId));
-  pos.xy=rotate(pos.xy,instanceRands.z*6.28+sign(cycleRands.z-.5)*u_time*mix(.5,1.,cycleRands.y))
-    *linearStep(instanceRands.w*0.5,instanceRands.w*0.5+0.5,u_activeRatio)*0.35;
+      pos.xy=rotate(pos.xy,instanceRands.z*6.28+sign(cycleRands.z-.5)*u_time*mix(.5,1.,cycleRands.y))
+    *linearStep(instanceRands.w*0.5,instanceRands.w*0.5+0.5,u_activeRatio)*0.55;
   float yLimit=7.0/u_aspect;
   vec3 instancePos=vec3(mix(-5.,5.,cycleRands.x),yLimit*mix(-1.0,1.0,ratio),20.+instanceId/float(COUNT));
   pos+=instancePos;
@@ -371,7 +371,8 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
 
   return {
     update({ whiteTunnelWaitRatio = 0, aspect = 1, bg = '#000000' } = {}) {
-      const activeRatio = fit(whiteTunnelWaitRatio, 0, 0.2, 0, 1)
+      // Come in a bit earlier so the wait finale isn't an empty black frame
+      const activeRatio = fit(whiteTunnelWaitRatio, 0, 0.12, 0, 1)
       const show = activeRatio > 0
       container.visible = show
       stickerMesh.visible = show
