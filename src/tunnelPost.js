@@ -146,16 +146,15 @@ export function createTunnelPost(renderer, scene, camera) {
           : THREE.MathUtils.lerp(0, 0.9, THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1))
       thr = 0.45
     } else {
-      // title: soft rim + chromatic halo (Lusion bloom 30→6 maps gently)
+      // Keep suit readable: high threshold so only hot greeble/emission blooms
       const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
-      ba = THREE.MathUtils.lerp(1.15, 0.55, t)
-      thr = THREE.MathUtils.lerp(0.28, 0.45, t)
+      ba = THREE.MathUtils.lerp(0.7, 0.4, t)
+      thr = THREE.MathUtils.lerp(0.55, 0.7, t)
       if (isBlackTunnelActive) {
-        // bigger circular glow mid-tunnel (matches Lusion rainbow ring)
-        ba = THREE.MathUtils.lerp(0.7, 1.35, THREE.MathUtils.clamp(blackTunnelRatio / 0.45, 0, 1))
-        thr = THREE.MathUtils.lerp(0.35, 0.18, THREE.MathUtils.clamp(blackTunnelRatio / 0.35, 0, 1))
+        ba = THREE.MathUtils.lerp(0.55, 0.95, THREE.MathUtils.clamp(blackTunnelRatio / 0.45, 0, 1))
+        thr = THREE.MathUtils.lerp(0.6, 0.35, THREE.MathUtils.clamp(blackTunnelRatio / 0.35, 0, 1))
         if (blackTunnelRatio > 0.65) {
-          ba = THREE.MathUtils.lerp(ba, 0.55, THREE.MathUtils.clamp((blackTunnelRatio - 0.65) / 0.2, 0, 1))
+          ba = THREE.MathUtils.lerp(ba, 0.45, THREE.MathUtils.clamp((blackTunnelRatio - 0.65) / 0.2, 0, 1))
         }
       }
     }
