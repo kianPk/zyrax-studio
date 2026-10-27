@@ -865,15 +865,17 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
 
-    // Header contrast while tunnel is pinned (Lusion swaps header text color)
+    // Header contrast only while tunnel sticky is pinned (not during goal copy)
     const header = document.getElementById('header')
     if (header) {
-      const onDark =
-        active &&
-        (isBlackTitleActive || isBlackTunnelActive || (isWhiteTunnelActive && astronautDropRatio >= 1))
-      const onWhiteTunnel = active && isWhiteTunnelActive && astronautDropRatio < 1
-      header.style.color = onDark || onWhiteTunnel ? '#ffffff' : ''
-      if (onWhiteTunnel) header.style.color = '#000000'
+      const pinned = stickyEl?.classList.contains('is-pinned')
+      if (!pinned) {
+        header.style.color = ''
+      } else if (isWhiteTunnelActive && astronautDropRatio < 1) {
+        header.style.color = '#000000'
+      } else {
+        header.style.color = '#ffffff'
+      }
     }
 
     const wasBlack = sectionEl.dataset.goalPhase === 'black-tunnel'
