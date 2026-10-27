@@ -79,11 +79,14 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     const global = ranges.progress()
     const vh = window.innerHeight
 
-    // Pin tunnel viewport while goal scroll range is active (Lenis-safe)
+    // Pin tunnel once sticky reaches viewport top (after context + cyan line)
     if (stickyEl) {
       const sectionRect = sectionEl.getBoundingClientRect()
-      // pin while section top has reached viewport top and section still covers viewport
-      const shouldPin = sectionRect.top <= 0 && sectionRect.bottom > vh
+      const scrollY = window.scrollY || 0
+      // Document Y of sticky slot (spacer when pinned, else sticky itself)
+      const slotEl = stickyEl.classList.contains('is-pinned') && pinSpacer ? pinSpacer : stickyEl
+      const slotTop = slotEl.getBoundingClientRect().top + scrollY
+      const shouldPin = scrollY >= slotTop - 1 && sectionRect.bottom > vh
       stickyEl.classList.toggle('is-pinned', shouldPin)
       if (pinSpacer) {
         pinSpacer.style.height = shouldPin ? `${stickyEl.offsetHeight || vh}px` : '0px'
@@ -113,10 +116,11 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       word.style.transform = `translateX(${spread * ox}px)`
     })
 
+    // Context paras stay readable during cyan-line phase (Lusion); soft fade only deep in tunnel
     if (paras) {
-      const pr = fit(astronautDropRatio, 0.15, 0.85, 0, 1)
-      paras.style.opacity = String(pr)
-      paras.style.transform = `translateY(${(1 - pr) * 48}px)`
+      const fade = fit(blackTunnelRatio, 0.02, 0.15, 1, 0)
+      paras.style.opacity = String(fade)
+      paras.style.transform = 'none'
     }
 
     sectionEl.dataset.goalPhase =

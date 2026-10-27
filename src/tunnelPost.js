@@ -45,29 +45,35 @@ const HaloShader = {
       vec2 toCenterA = toCenter * vec2(aspect, 1.0);
       float dist = length(toCenterA);
       vec2 dir = dist > 1e-5 ? normalize(toCenter) : vec2(0.0);
-      // Lusion-style ghost / halo with per-channel RGB shift
+      // Lusion-style ghost / halo with per-channel RGB shift + circular ring
       float ghost = 0.55;
       vec2 ghostUv = center + toCenter * ghost;
-      float zoomBlurRatio = fract(atan(toCenter.y, toCenter.x) * 40.0) * 0.05 + 0.95;
+      float zoomBlurRatio = fract(atan(toCenterA.y, toCenterA.x) * 40.0) * 0.05 + 0.95;
       ghostUv = center + (ghostUv - center) * zoomBlurRatio;
-      vec2 haloVec = dir * u_haloRGBShift * (0.35 + dist);
+      vec2 haloVec = dir * u_haloRGBShift * (0.45 + dist * 1.2);
       vec2 haloUv = ghostUv + haloVec;
-      vec3 distortion = vec3(-1.0, 0.0, 1.0) * u_haloRGBShift * 0.6;
+      vec3 distortion = vec3(-1.0, 0.0, 1.0) * u_haloRGBShift;
       vec3 halo = vec3(
         texture2D(tDiffuse, haloUv + dir * distortion.r).r,
         texture2D(tDiffuse, haloUv + dir * distortion.g).g,
         texture2D(tDiffuse, haloUv + dir * distortion.b).b
       );
-      float mask = smoothstep(u_haloMaskInner, u_haloMaskOuter, dist)
-                 * (1.0 - smoothstep(0.85, 1.15, dist));
-      halo *= u_haloStrength * mask;
-      // subtle radial chromatic on the base as well
-      vec3 shifted = vec3(
-        texture2D(tDiffuse, v_uv + dir * distortion.r * dist * 0.4).r,
-        texture2D(tDiffuse, v_uv + dir * distortion.g * dist * 0.4).g,
-        texture2D(tDiffuse, v_uv + dir * distortion.b * dist * 0.4).b
+      float ring = smoothstep(u_haloMaskInner, u_haloMaskOuter, dist)
+                 * (1.0 - smoothstep(u_haloMaskOuter, u_haloMaskOuter + 0.35, dist));
+      // spectral fringe on the ring itself
+      vec3 spectrum = vec3(
+        smoothstep(0.15, 0.45, dist),
+        smoothstep(0.25, 0.55, dist) * (1.0 - smoothstep(0.55, 0.8, dist)),
+        smoothstep(0.4, 0.75, dist)
       );
-      vec3 color = mix(base.rgb, shifted, u_haloStrength * 0.35 * dist);
+      halo = halo * 0.65 + spectrum * 0.55;
+      halo *= u_haloStrength * ring;
+      vec3 shifted = vec3(
+        texture2D(tDiffuse, v_uv + dir * distortion.r * dist * 0.55).r,
+        texture2D(tDiffuse, v_uv + dir * distortion.g * dist * 0.55).g,
+        texture2D(tDiffuse, v_uv + dir * distortion.b * dist * 0.55).b
+      );
+      vec3 color = mix(base.rgb, shifted, clamp(u_haloStrength * 0.55 * dist, 0.0, 0.7));
       color += halo;
       gl_FragColor = vec4(color, base.a);
     }
@@ -81,10 +87,11 @@ export function createTunnelPost(renderer, scene, camera) {
   const renderPass = new RenderPass(scene, camera)
   composer.addPass(renderPass)
 
-  const bloomPass = new UnrealBloomPass(size.clone(), 0.6, 0.85, 0.2)
-  bloomPass.threshold = 0.15
+  // UnrealBloomPass units ≠ Lusion FFT bloom — keep strength low
+  const bloomPass = new UnrealBloomPass(size.clone(), 0.35, 0.6, 0.55)
+  bloomPass.threshold = 0.55
   bloomPass.strength = 0
-  bloomPass.radius = 0.85
+  bloomPass.radius = 0.6
   composer.addPass(bloomPass)
 
   const haloPass = new ShaderPass(HaloShader)
@@ -129,32 +136,45 @@ export function createTunnelPost(renderer, scene, camera) {
     if (isWhiteTunnelActive) hs = 0
     haloStrength = hs
 
-    // bloomAmount — Lusion uses huge FFT bloom units; scale down for UnrealBloomPass
+    // Map Lusion FFT bloomAmount (30→6 on title, ~2–4 on white) into UnrealBloomPass
     let ba
+    let thr
     if (isWhiteTunnelActive) {
       ba =
         astronautDropRatio < 1
-          ? THREE.MathUtils.clamp(1 - whiteFrameRatio / 0.05, 0, 1) * 2 + 2
-          : THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1) * 4
+          ? THREE.MathUtils.lerp(0.55, 0.35, THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1))
+          : THREE.MathUtils.lerp(0, 0.9, THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1))
+      thr = 0.45
     } else {
-      // fit(blackTitleRatio, 0, .25, 30, 6) → map to ~2.2 .. 0.55
+      // title: soft rim + chromatic halo (Lusion bloom 30→6 maps gently)
       const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
-      ba = THREE.MathUtils.lerp(2.4, 0.55, t)
-      if (isBlackTunnelActive && blackTunnelRatio > 0.5) {
-        ba = Math.max(ba, 0.8)
+      ba = THREE.MathUtils.lerp(1.15, 0.55, t)
+      thr = THREE.MathUtils.lerp(0.28, 0.45, t)
+      if (isBlackTunnelActive) {
+        // bigger circular glow mid-tunnel (matches Lusion rainbow ring)
+        ba = THREE.MathUtils.lerp(0.7, 1.35, THREE.MathUtils.clamp(blackTunnelRatio / 0.45, 0, 1))
+        thr = THREE.MathUtils.lerp(0.35, 0.18, THREE.MathUtils.clamp(blackTunnelRatio / 0.35, 0, 1))
+        if (blackTunnelRatio > 0.65) {
+          ba = THREE.MathUtils.lerp(ba, 0.55, THREE.MathUtils.clamp((blackTunnelRatio - 0.65) / 0.2, 0, 1))
+        }
       }
     }
     bloomAmount = ba
     bloomSaturation =
       blackTunnelRatio < 1
-        ? THREE.MathUtils.lerp(1, 3, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
+        ? THREE.MathUtils.lerp(1, 2.8, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
         : 1
 
     bloomPass.strength = bloomAmount
-    bloomPass.radius = 0.7 + bloomSaturation * 0.15
-    bloomPass.threshold = isWhiteTunnelActive ? 0.35 : 0.12
-    haloPass.material.uniforms.u_haloStrength.value = haloStrength
-    haloPass.material.uniforms.u_haloRGBShift.value = haloRGBShift
+    bloomPass.radius = 0.55 + bloomSaturation * 0.18
+    bloomPass.threshold = thr
+    // Lusion haloRGBShift 0.015 — amplify strength so the circular ring reads
+    haloPass.material.uniforms.u_haloStrength.value = Math.min(0.45, Math.max(haloStrength * 1.6, isBlackTunnelActive ? 0.12 : 0))
+    haloPass.material.uniforms.u_haloRGBShift.value = isBlackTunnelActive
+      ? 0.028
+      : haloRGBShift
+    haloPass.material.uniforms.u_haloMaskInner.value = isBlackTunnelActive ? 0.18 : 0.3
+    haloPass.material.uniforms.u_haloMaskOuter.value = isBlackTunnelActive ? 0.72 : 0.5
   }
 
   const render = () => {

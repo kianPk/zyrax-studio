@@ -543,9 +543,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       fragmentShader: blackTunnelFrag,
       side: THREE.DoubleSide,
       transparent: true,
-      depthWrite: false,
-      // Additive stand-in for Lusion post bloom — makes greeble glow
-      blending: THREE.AdditiveBlending,
+      depthWrite: !isHd,
+      // HD emissive greeble: soft additive so feedback glow builds like Lusion bloom src
+      blending: isHd ? THREE.AdditiveBlending : THREE.NormalBlending,
       defines: { GRID_SIZE, ...(isHd ? { IS_HD: true } : {}) },
     })
     const mesh = new THREE.Mesh(ig, mat)

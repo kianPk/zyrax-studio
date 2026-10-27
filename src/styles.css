@@ -674,7 +674,7 @@ button {
   letter-spacing: 0.06em;
 }
 
-/* GOAL — Lusion uses ~4200vh of scroll runway */
+/* GOAL — Lusion order: context + cyan line first, then tunnel runway */
 #home-goal {
   display: block;
   padding: 0;
@@ -682,6 +682,42 @@ button {
   position: relative;
   min-height: calc(var(--vh, 1vh) * 100);
   font-size: clamp(0.875rem, 1vw, 2rem);
+}
+#home-goal-context {
+  position: relative;
+  z-index: 3;
+  color: var(--color-black);
+  padding: clamp(80px, 12vw, 180px) var(--base-padding-x) clamp(60px, 8vw, 120px);
+}
+#home-goal-context-inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--grid-gap);
+  width: 100%;
+}
+#home-goal-title {
+  position: relative;
+  z-index: 2;
+  grid-column: 1 / span 12;
+  font-size: 8vw;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  margin-top: 2.2em;
+  margin-bottom: 0.5em;
+  left: -0.068em;
+  width: 11em;
+  will-change: transform;
+  overflow: hidden;
+}
+.home-goal-texts-paragraph {
+  grid-column: 8 / 12;
+  opacity: 1;
+  font-size: clamp(1.05rem, 1.3vw, 1.5rem);
+  line-height: 1.4;
+}
+.home-goal-texts-paragraph p {
+  margin: 0 0 1.25em;
 }
 #home-goal-tunnel-sticky {
   /* Lenis breaks CSS sticky — pin via JS (position:fixed) while section is active */
@@ -698,6 +734,7 @@ button {
   left: 0;
   right: 0;
   top: 0;
+  z-index: 4;
 }
 #goal-tunnel-canvas {
   position: absolute;
@@ -738,34 +775,6 @@ button {
   position: relative;
   will-change: transform;
   margin: 0 0.25ch;
-}
-#home-goal-context {
-  position: relative;
-  z-index: 3;
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: clamp(40px, 8vw, 120px) var(--base-padding-x) clamp(80px, 12vw, 160px);
-  color: var(--color-black);
-}
-#home-goal-title {
-  position: relative;
-  font-size: 8vw;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  margin-top: 2.2em;
-  margin-bottom: 0.5em;
-  left: -0.068em;
-  width: 11em;
-  will-change: transform;
-  overflow: hidden;
-}
-.home-goal-texts-paragraph {
-  opacity: 0;
-}
-.home-goal-texts-paragraph p {
-  font-size: clamp(1.05rem, 1.3vw, 1.25rem);
-  line-height: 1.35;
-  margin: 0 0 1.25em;
 }
 
 /* END */
