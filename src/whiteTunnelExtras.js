@@ -224,7 +224,8 @@ function seededRandom(seed) {
 }
 
 export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTime }) {
-  const stickerFile = isMobile ? 'stickers_low.png' : 'stickers.png'
+  // Prefer full stickers atlas even on phone — low atlas looks muddy at wait bloom
+  const stickerFile = 'stickers.png'
   const [stickerTex, diamondGeo] = await Promise.all([
     new THREE.TextureLoader().loadAsync(`${base}assets/textures/tunnels/${stickerFile}`),
     loadBuf(`${base}assets/models/tunnels/diamond.buf`),

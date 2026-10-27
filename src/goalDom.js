@@ -21,7 +21,9 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
 
   const ranges = createGoalRanges(sectionEl)
   const isMobile = () => window.innerWidth < 812
-  const paras = sectionEl.querySelector('.home-goal-texts-paragraph')
+  const textsEl =
+    sectionEl.querySelector('#home-goal-texts') ||
+    sectionEl.querySelector('.home-goal-texts-paragraph')
   const RATIO_FROM = 0.25
   const RATIO_TO = 1
 
@@ -98,7 +100,8 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     let r = fit(blackTitleRatio, RATIO_FROM, RATIO_TO, 0, 1)
     const active = r > 0 && r < 1
 
-    let scale = fit(r, 0.5, 1, 1, isMobile() ? 6 : 12, easeCubicIn)
+    // Mobile needs a bigger zoom so "STEP INTO…" fills the portrait viewport like Lusion
+    let scale = fit(r, 0.5, 1, 1, isMobile() ? 9 : 12, easeCubicIn)
     scale *= fit(r, 0, 0.15, 0.85, 1, easeCubicOut)
     let opacity = fit(r, 0.9, 1, 1, 0)
     opacity *= fit(r, 0, 0.05, 0, 1)
@@ -117,10 +120,10 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     })
 
     // Context paras stay readable during cyan-line phase (Lusion); soft fade only deep in tunnel
-    if (paras) {
+    if (textsEl) {
       const fade = fit(blackTunnelRatio, 0.02, 0.15, 1, 0)
-      paras.style.opacity = String(fade)
-      paras.style.transform = 'none'
+      textsEl.style.opacity = String(fade)
+      textsEl.style.transform = 'none'
     }
 
     sectionEl.dataset.goalPhase =

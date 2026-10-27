@@ -326,6 +326,7 @@ export function createTunnelPost(renderer, scene, camera) {
     astronautDropRatio = 0,
     isWhiteTunnelActive = false,
     isBlackTunnelActive = false,
+    isMobile = false,
   } = {}) => {
     // Exact Lusion haloStrength
     let hs =
@@ -338,6 +339,8 @@ export function createTunnelPost(renderer, scene, camera) {
       hs = hs + (0.08 - hs) * t
     }
     if (isWhiteTunnelActive) hs = 0
+    // Portrait: slightly stronger halo so the title-ring reads like Lusion
+    if (isMobile && !isWhiteTunnelActive) hs *= 1.15
     haloStrength = hs
 
     // bloomSaturation fit(blackTunnelRatio, 0, .7, 1, 3)
@@ -348,10 +351,21 @@ export function createTunnelPost(renderer, scene, camera) {
 
     if (isWhiteTunnelActive) {
       // fit whiteFrame 0..05 → 4..2, or wait → 0..20
+      // Mobile: cap wait bloom so astronaut/stickers stay readable
+      const waitBloomPeak = isMobile ? 8 : 20
+      const whiteBloomPeak = isMobile ? 2.6 : 4
       bloomAmount =
         astronautDropRatio < 1
-          ? THREE.MathUtils.lerp(4, 2, THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1))
-          : THREE.MathUtils.lerp(0, 20, THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1))
+          ? THREE.MathUtils.lerp(
+              whiteBloomPeak,
+              2,
+              THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1)
+            )
+          : THREE.MathUtils.lerp(
+              0,
+              waitBloomPeak,
+              THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
+            )
       clearAlpha = THREE.MathUtils.lerp(
         0.3,
         0,
@@ -360,12 +374,12 @@ export function createTunnelPost(renderer, scene, camera) {
     } else {
       // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel
       const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
-      bloomAmount = THREE.MathUtils.lerp(30, 6, t)
+      bloomAmount = THREE.MathUtils.lerp(isMobile ? 22 : 30, isMobile ? 5 : 6, t)
       clearAlpha = 0
     }
 
     haloWidth = 0.6
-    haloRGBShift = 0.015
+    haloRGBShift = isMobile ? 0.012 : 0.015
     haloMaskInner = 0.3
     haloMaskOuter = 0.5
     bloomRadius = 0

@@ -1043,8 +1043,9 @@ button {
   .project-item-line-2 {
     font-size: 6.5vw;
   }
+  /* Keep Lusion-length runway so black→white→wait phases aren't rushed */
   #home-goal {
-    padding-bottom: calc(var(--vh, 1vh) * 2000);
+    padding-bottom: calc(var(--vh, 1vh) * 4200);
   }
   #home-goal-context {
     grid-column: 1 / span 12;
@@ -1074,9 +1075,13 @@ button {
   .home-goal-tunnel-title-line {
     white-space: normal;
   }
+  /* Absolute overlay must stay centered — Lusion's top:0 is for relative grid layout */
   #home-goal-tunnel-title {
-    font-size: clamp(1.6rem, 7vw, 2.4rem);
-    top: 0;
+    top: 50%;
+    left: 50%;
+    font-size: 8.5vw;
+    line-height: 1.05;
+    width: 100%;
   }
   #home-featured-title-top,
   .project-list,

@@ -240,7 +240,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     throw err
   }
   renderer.setClearColor(0x000000, 1)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
+  // Mobile needs a bit more than 1x or astronaut reads as soft/grainy vs Lusion
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 1.35))
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.autoClear = true
   // Post stack created after scene/camera exist (below)
@@ -684,10 +685,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     camera.translateZ(n)
     camera.fov = baseFov
     cameraDistance += n
-    // Desktop: pull to look point, apply mouse look, push back (Lusion CameraControls)
+    // Pull to look point, apply look, push back (Lusion CameraControls)
     camera.translateZ(cameraDistance * -1)
-    const lookTargetX = Math.max(-1, Math.min(1, mouseY)) * cameraLookStrength
-    const lookTargetY = Math.max(-1, Math.min(1, -mouseX)) * cameraLookStrength
+    // Mobile: softer look so portrait framing stays stable
+    const lookStrength = isMobile ? cameraLookStrength * 0.35 : cameraLookStrength
+    const lookTargetX = Math.max(-1, Math.min(1, mouseY)) * lookStrength
+    const lookTargetY = Math.max(-1, Math.min(1, -mouseX)) * lookStrength
     // Lusion: += (target-current) * cameraLookEaseDamp (per-frame damp ~0.1)
     cameraLookX += (lookTargetX - cameraLookX) * cameraLookEaseDamp
     cameraLookY += (lookTargetY - cameraLookY) * cameraLookEaseDamp
@@ -842,6 +845,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       astronautDropRatio,
       isWhiteTunnelActive,
       isBlackTunnelActive,
+      isMobile,
     })
 
     sharedUniforms.u_whiteTunnelRatio.value = whiteTunnelRatio
@@ -932,18 +936,34 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     astronautRoot.visible = showRatio > 0.02
 
     // —— Lusion CameraControls FOV / dolly + look strength ——
-    baseCameraFov = EXPECTED_FOV
+    // Port GoalTunnels frameHeight→FOV: mix frame into viewport during blackFrameIn / whiteFrame
+    const vhPx = window.innerHeight || 1
+    const frameH = Math.max(
+      1,
+      stickyEl?.clientHeight || vhPx
+    )
+    const frameMix =
+      blackFrameInRatio < 1
+        ? blackFrameInRatio
+        : 1 - whiteFrameRatio
+    const mixedFrameH = THREE.MathUtils.lerp(frameH * (isMobile ? 0.72 : 0.55), vhPx, frameMix)
+    const dist = DEFAULT_CAM.distanceTo(DEFAULT_LOOK)
+    const expectedRad = (EXPECTED_FOV / 180) * Math.PI
+    const l =
+      Math.tan(expectedRad / 2) * dist * 2 * (vhPx / Math.max(mixedFrameH, 1))
+    baseCameraFov = (Math.atan(l / 2 / dist) * 2) / Math.PI * 180
+
     if (isWhiteTunnelActive) {
-      cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
-      baseCameraFov = fit(whiteFrameRatio, 0, 1, EXPECTED_FOV, 70)
+      cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, isMobile ? 36 : 60, 0)
+      baseCameraFov = fit(whiteFrameRatio, 0, 1, baseCameraFov, isMobile ? 58 : 70)
     } else if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *
-        7.5 *
+        (isMobile ? 4.5 : 7.5) *
         smoothstep(0, 0.2, blackTunnelRatio)
       blackTunnelGroup.position.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
     } else {
-      cameraDollyZoomFovOffset = fit(blackFrameInRatio, 0, 1, 20, 0)
+      cameraDollyZoomFovOffset = fit(blackFrameInRatio, 0, 1, isMobile ? 12 : 20, 0)
       blackTunnelGroup.position.z = -80
     }
     // syncProperties cameraLookStrength
@@ -1064,21 +1084,27 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blackUniforms.u_color2.value.copy(colorA)
 
     // GoalTunnelEfx offsets from Lusion black tunnel update (amount eased in)
+    // Mobile: keep motion blur mild — high amount reads as blue glitch streaks
+    const efxScale = isMobile ? 0.45 : 1
     post.setEfxOffset(
-      efxDeltaZ * fit(blackTunnelRatio, 0, 0.2, 0, 1),
-      efxDeltaZ * transformRatio * 0.01
+      efxDeltaZ * fit(blackTunnelRatio, 0, 0.2, 0, 1) * efxScale,
+      efxDeltaZ * transformRatio * 0.01 * efxScale
     )
-    post.setEfxAmount(fit(blackTunnelRatio, 0, 0.25, 0.35, 0.85))
+    post.setEfxAmount(
+      fit(blackTunnelRatio, 0, 0.25, 0.35, 0.85) * (isMobile ? 0.55 : 1)
+    )
 
     cameraDollyZoomFovOffset =
       Math.sin(blackTunnelRatio * 10 + tunnelTime) *
-      7.5 *
+      (isMobile ? 4.5 : 7.5) *
       smoothstep(0, 0.2, blackTunnelRatio)
   }
 
+  let prevWhiteRatio = 0
   const updateWhiteTunnel = (dt) => {
     if (!isWhiteTunnelActive) {
       whiteExtras.update({ whiteTunnelWaitRatio: 0, aspect: camera.aspect })
+      prevWhiteRatio = whiteTunnelRatio
       return
     }
     whiteFbm.update(dt)
@@ -1086,6 +1112,25 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     wallMat.uniforms.u_time.value = tunnelTime
     baseMat.uniforms.u_fbm.value = fbmPos
     wallMat.uniforms.u_fbm.value = fbmPos
+
+    // Lusion GoalWhiteTunnel.update — efx from ratio delta, fade amount near end
+    let dRatio = whiteTunnelRatio - prevWhiteRatio
+    if (Math.abs(dRatio) > 0.08) dRatio = 0
+    const efxScale = isMobile ? 0.4 : 1
+    const zOff = THREE.MathUtils.clamp(
+      -dRatio * fit(whiteTunnelRatio, 0, 0.9, 500, 0, easeSineIn) * efxScale,
+      -1,
+      1
+    )
+    const rotOff = THREE.MathUtils.clamp(
+      -dRatio * fit(whiteTunnelRatio, 0, 0.8, 45, 0, easeSineIn) * efxScale,
+      -1,
+      1
+    )
+    post.setEfxOffset(zOff, rotOff)
+    post.setEfxAmount(fit(whiteTunnelRatio, 0.75, 1, 1, 0) * (isMobile ? 0.5 : 1))
+    prevWhiteRatio = whiteTunnelRatio
+
     const bgHex =
       isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
     whiteExtras.update({
