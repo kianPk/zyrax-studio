@@ -311,7 +311,10 @@ export async function createScrollLines() {
     inner.position.y = data.margin.y * scaleY - screenY
     inner.scale.set(scaleX, scaleY, 1)
 
-    mat.uniforms.u_showRatio.value = a
+    // Smooth draw-on — kills stair-step feel when Lenis eases
+    if (line._showSmooth == null) line._showSmooth = a
+    line._showSmooth += (a - line._showSmooth) * 0.18
+    mat.uniforms.u_showRatio.value = line._showSmooth
     mat.uniforms.u_radius.value = radius
 
     const goalPhase = sectionEl.dataset?.goalPhase

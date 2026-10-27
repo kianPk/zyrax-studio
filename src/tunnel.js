@@ -608,7 +608,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     m.rotationAmplitude = 10
     return m
   })
-  const cloneTimeShifts = Float32Array.from({ length: CLONE_COUNT }, () => Math.random() * 2)
+  // Lusion: hero timeShift=0, clones random; cloneTimeShift cycles during black tunnel
+  const partTimeShifts = Float32Array.from({ length: CLONE_COUNT + 1 }, (_, i) =>
+    i === 0 ? 0 : Math.random() * 2
+  )
+  const cloneCycleShifts = new Float32Array(CLONE_COUNT)
+  const cloneAnimTimes = new Float32Array(CLONE_COUNT)
   const basePathPos = new THREE.Vector3()
   const basePathQuat = new THREE.Quaternion()
   const heroMatrix = new THREE.Matrix4()
@@ -628,6 +633,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let cameraLookX = 0
   let cameraLookY = 0
   let cameraLookStrength = 0.08
+  const cameraLookEaseDamp = 0.1
+  let pointerDown = false
+  let freezeRatio = 0
+  let autoScrollSpeed = 0
+  let whiteTunnelAstronautOutRatio = 0
   window.addEventListener(
     'pointermove',
     (e) => {
@@ -636,6 +646,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     },
     { passive: true }
   )
+  window.addEventListener('pointerdown', () => { pointerDown = true }, { passive: true })
+  window.addEventListener('pointerup', () => { pointerDown = false }, { passive: true })
+  window.addEventListener('pointercancel', () => { pointerDown = false }, { passive: true })
 
   /** Port of Lusion CameraControls: dolly-zoom + mouse look. */
   const applyCamera = () => {
@@ -662,8 +675,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     camera.translateZ(cameraDistance * -1)
     const lookTargetX = Math.max(-1, Math.min(1, mouseY)) * cameraLookStrength
     const lookTargetY = Math.max(-1, Math.min(1, -mouseX)) * cameraLookStrength
-    cameraLookX += (lookTargetX - cameraLookX) * 0.1
-    cameraLookY += (lookTargetY - cameraLookY) * 0.1
+    // Lusion: += (target-current) * cameraLookEaseDamp (per-frame damp ~0.1)
+    cameraLookX += (lookTargetX - cameraLookX) * cameraLookEaseDamp
+    cameraLookY += (lookTargetY - cameraLookY) * cameraLookEaseDamp
     tmpEuler.set(cameraLookX, cameraLookY, 0)
     tmpQ.setFromEuler(tmpEuler)
     camera.quaternion.multiply(tmpQ)
@@ -695,8 +709,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         heroPosDyn.valueVel.length() * 0.2 + heroRotDyn.valueVel.length() * 0.2
       )
 
-    // Clones — Lusion Brownian ghosts during black tunnel only
-    if (clonesShowRatio > 0.01 && !isWhiteTunnelActive) {
+    // Clones — Lusion: copy hero path, multiply Brownian matrix, lerp→hero by show fade
+    if (clonesShowRatio > 0.01 && !isWhiteTunnelActive && !isBlackTitleActive) {
       for (let i = 0; i < CLONE_COUNT; i++) {
         const m = cloneMotions[i]
         m.positionFrequency = 0.2
@@ -704,12 +718,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         m.positionAmplitude = 12
         m.rotationAmplitude = 10
         m.update(dt)
-        // start from hero base pose then apply clone brownian
         heroMatrix.compose(basePathPos, basePathQuat, oneScale)
-        motionMatrix.copy(m.matrix)
-        heroMatrix.multiply(motionMatrix)
+        heroMatrix.multiply(m.matrix)
         heroMatrix.decompose(tmpV, tmpQ, tmpV2)
-        // lerp toward hero as clonesShowRatio fades each clone out
         const t = i / Math.max(CLONE_COUNT - 1, 1)
         const fade = fit(clonesShowRatio, t * 0.3, 0.7 + t * 0.3, 1, 0, easeSineInOut)
         tmpV2.set(instancePos.getX(0), instancePos.getY(0), instancePos.getZ(0))
@@ -795,6 +806,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     const whiteTunnelAstronautRatio = ranges.between('whiteTunnel', 'whiteFrameBreak').ratio
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
+    whiteTunnelAstronautOutRatio = ranges.between('whiteFrameBreak', 'astronautWait').ratio
 
     isBlackTitleActive = blackTitleRatio < 1
     isBlackTunnelActive = blackTunnelRatio < 1 && !isBlackTitleActive
@@ -920,6 +932,15 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       )
     }
     cameraLookStrength = fit(whiteTunnelWaitRatio, 0, 0.1, cameraLookStrength, 0.05)
+
+    // Lusion GoalTunnels.autoScrollSpeed — cinematic keep-alive through goal
+    autoScrollSpeed =
+      (1 - freezeRatio) *
+      scrollDir *
+      2.5 *
+      fit(blackFrameInRatio, 0, 0.5, 0, 1) *
+      fit(whiteTunnelWaitRatio, 0, 0.25, 1, 0)
+
     applyCamera()
 
     // black astronaut uniforms (scroll-linked)
@@ -968,7 +989,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     const transformRatio = fit(blackTunnelRatio, 0.6, 1, 0, 1, easeSineIn)
     blackUniforms.u_blackTunnelTransformRatio.value = transformRatio
 
-    const signedDt = scrollDir * tunnelDeltaTime
+    // dt already = tunnelDeltaTime from GoalTunnels.syncProperties
+    const signedDt = scrollDir * dt
     blackPulseTime +=
       signedDt * cUnMix(0.1, 0.3, blackTunnelRatio) * fit(transformRatio, 0, 0.25, 1, 0.5)
     blackLinearTime += signedDt * fit(transformRatio, 0, 0.25, 1.5, 1)
@@ -1045,21 +1067,41 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   window.addEventListener('scroll', onScroll, { passive: true })
   updateScroll()
 
-  const tick = (now) => {
-    raf = requestAnimationFrame(tick)
-    const dt = Math.min(0.05, (now - last) / 1000)
-    last = now
-    if (!active) return
+  /** Driven from gsap ticker (synced with Lenis) for smoother coupling. */
+  const tickFrame = (rawDt) => {
+    const e = Math.min(0.05, Math.max(0, rawDt || 1 / 60))
+    last = performance.now()
+    if (!active) {
+      // still idle-render title sticky when partially visible
+      if (stickyEl) {
+        const r = stickyEl.getBoundingClientRect()
+        if (r.bottom > 0 && r.top < window.innerHeight) {
+          post.render()
+        }
+      }
+      return
+    }
 
-    tunnelDeltaTime = dt
+    // Exact Lusion GoalTunnels.syncProperties time scale
+    freezeRatio += ((pointerDown ? 1 : 0) - freezeRatio) * 0.1
+    tunnelDeltaTime = fit(freezeRatio, 0, 1, 1, 0.3) * e
+    tunnelDeltaTime = fit(blackFrameInRatio, 0, 1, e, tunnelDeltaTime)
+    tunnelDeltaTime = fit(whiteTunnelAstronautOutRatio, 0.5, 0.75, tunnelDeltaTime, e)
     tunnelTime += tunnelDeltaTime
     sharedUniforms.u_time.value = tunnelTime
 
-    updateBlackTunnel(dt)
-    updateWhiteTunnel(dt)
-    updateAstronautTransforms(dt)
+    // Recompute autoScroll each frame (freeze affects it)
+    autoScrollSpeed =
+      (1 - freezeRatio) *
+      scrollDir *
+      2.5 *
+      fit(blackFrameInRatio, 0, 0.5, 0, 1) *
+      fit(whiteTunnelWaitRatio, 0, 0.25, 1, 0)
 
-    // live black-tunnel FOV pulse + mouse look
+    updateBlackTunnel(tunnelDeltaTime)
+    updateWhiteTunnel(tunnelDeltaTime)
+    updateAstronautTransforms(tunnelDeltaTime)
+
     if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *
@@ -1068,13 +1110,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     }
     applyCamera()
 
-    // bone loop — Lusion updateAnimation (exact speed curves)
+    // bone loop — Lusion updateAnimation (per-instance timeShift)
     const drop = astronautDropRatio
     let speed
     let loopFrom
     let loopTo
     if (drop < 0.5) {
-      // smoothstep(-0.3, 1, blackTitleRatio) * 0.75
       speed = smoothstep(-0.3, 1, blackTitleRatio) * 0.75
       loopFrom = 0
       loopTo = 89
@@ -1083,13 +1124,15 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       loopFrom = 140
       loopTo = Math.min(frameCount - 1, 287)
     }
-    animationTime += dt * speed * deltaTimeMultiplier
+    animationTime += tunnelDeltaTime * speed * deltaTimeMultiplier
     const span = loopTo - loopFrom + 1
-    const E = (animationTime * 60) % span
-    const I = Math.floor(E) + loopFrom
-    const F = ((Math.floor(E) + 1) % span) + loopFrom
-    const blend = E - Math.floor(E)
-    blend1.setXYZ(0, I, F, blend)
+    const heroShift = partTimeShifts[0]
+    const heroW = heroShift + animationTime
+    const heroE = (heroW * 60) % span
+    const heroI = Math.floor(heroE) + loopFrom
+    const heroF = ((Math.floor(heroE) + 1) % span) + loopFrom
+    const heroBlend = heroE - Math.floor(heroE)
+    blend1.setXYZ(0, heroI, heroF, heroBlend)
     blend1.needsUpdate = true
 
     const linearFrame = fit(whiteTunnelRatio + drop, 0.9, 2, 90, 139, easeQuartIn)
@@ -1101,17 +1144,27 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     sharedUniforms.u_loopLinearBlend.value =
       fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
 
-    if (clonesShowRatio > 0.01) {
+    if (clonesShowRatio > 0.01 && !isWhiteTunnelActive && !isBlackTitleActive) {
       for (let i = 0; i < CLONE_COUNT; i++) {
-        const shift = i * 7
-        cloneBlend1.setXYZ(i, I + shift, F + shift, blend)
+        cloneCycleShifts[i] = (cloneCycleShifts[i] + 0.2 * tunnelDeltaTime) % 1
+        cloneAnimTimes[i] += tunnelDeltaTime * speed * deltaTimeMultiplier
+        // Lusion: mix(0, timeShift, clonesShowRatio)
+        const C = THREE.MathUtils.lerp(0, partTimeShifts[i + 1], clonesShowRatio)
+        const w = C + cloneAnimTimes[i]
+        const E = (w * 60) % span
+        const I = Math.floor(E) + loopFrom
+        const F = ((Math.floor(E) + 1) % span) + loopFrom
+        const blend = E - Math.floor(E)
+        cloneBlend1.setXYZ(i, I, F, blend)
         cloneBlend2.setXYZ(i, u, f, p)
       }
       cloneBlend1.needsUpdate = true
       cloneBlend2.needsUpdate = true
     }
 
-    // Feedback: Lusion HD onAfterRender blit → quarter-res (astronaut stays in trail)
+    // scroll-velocity → post efx / paint feel
+    post.setScrollVelocity?.(Math.abs(autoScrollSpeed) + Math.abs(scrollDir) * 0.5)
+
     if (isBlackTunnelActive) {
       const prevRes = blackUniforms.u_resolution.value.clone()
       tunnelGroup.visible = false
@@ -1136,6 +1189,19 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     renderer.setClearColor(sharedUniforms.u_bgColor.value, post.clearAlpha)
     post.render()
   }
+
+  // Fallback RAF if host never calls tickFrame
+  const tick = (now) => {
+    raf = requestAnimationFrame(tick)
+    const dt = Math.min(0.05, (now - last) / 1000)
+    // Prefer gsap-driven tickFrame; only self-drive if not recently called
+    if (now - lastExternalTick > 50) tickFrame(dt)
+  }
+  let lastExternalTick = 0
+  const tickFrameExternal = (dt) => {
+    lastExternalTick = performance.now()
+    tickFrame(dt)
+  }
   raf = requestAnimationFrame(tick)
 
   requestAnimationFrame(() => {
@@ -1147,6 +1213,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   return {
     resize,
     updateScroll,
+    tickFrame: tickFrameExternal,
+    getAutoScrollSpeed: () => autoScrollSpeed,
     destroy() {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)

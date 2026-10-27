@@ -16,12 +16,35 @@ const setVh = () => {
 setVh()
 window.addEventListener('resize', setVh)
 
+// Softer wheel than default Lenis — closer to Lusion ScrollPane (wheelEaseCoeff 12)
 const lenis = new Lenis({
-  duration: isMobile ? 0.95 : 1.2,
+  duration: isMobile ? 1.05 : 1.35,
+  easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
   smoothWheel: true,
   syncTouch: false,
+  wheelMultiplier: isMobile ? 0.9 : 0.82,
+  touchMultiplier: 1.1,
 })
 window.lenis = lenis
+let goalAutoScrollSpeed = 0
+let goalAutoScrollRatio = 0
+let goalSkipAutoScroll = false
+let lastWheelTime = 0
+window.addEventListener(
+  'wheel',
+  () => {
+    lastWheelTime = performance.now()
+    goalSkipAutoScroll = true
+  },
+  { passive: true }
+)
+window.addEventListener(
+  'pointerdown',
+  () => {
+    goalSkipAutoScroll = true
+  },
+  { passive: true }
+)
 
 // Featured projects — Lusion-style list
 const list = document.getElementById('project-list')
@@ -65,12 +88,31 @@ let scrollLines = null
 
 let lastTick = performance.now()
 gsap.ticker.add((time) => {
-  lenis.raf(time * 1000)
   const now = performance.now()
   const dt = Math.min(0.05, (now - lastTick) / 1000)
   lastTick = now
+
+  // Lusion GoalTunnels autoScroll — keeps tunnel cinematic when wheel stops
+  if (goalTunnel?.getAutoScrollSpeed) {
+    goalAutoScrollSpeed = goalTunnel.getAutoScrollSpeed()
+  }
+  const wheelIdle = now - lastWheelTime > 80
+  if (wheelIdle && Math.abs(goalAutoScrollSpeed) > 0.01) {
+    goalSkipAutoScroll = false
+  }
+  goalAutoScrollRatio += Math.abs(goalAutoScrollSpeed) > 0 && !goalSkipAutoScroll ? dt : -1
+  goalAutoScrollRatio = Math.max(0, Math.min(1, goalAutoScrollRatio))
+  if (!goalSkipAutoScroll && goalAutoScrollRatio > 0 && Math.abs(goalAutoScrollSpeed) > 0.01) {
+    const vh = window.innerHeight
+    const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio
+    const next = (lenis.animatedScroll ?? lenis.scroll ?? window.scrollY) + deltaPx
+    lenis.scrollTo(next, { immediate: true, force: true })
+  }
+
+  lenis.raf(time * 1000)
   scrollText.update(dt)
   scrollLines?.update()
+  goalTunnel?.tickFrame?.(dt)
 })
 gsap.ticker.lagSmoothing(0)
 

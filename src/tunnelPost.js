@@ -79,11 +79,12 @@ void main() {
 }
 `
 
-/** Lusion frag$2 bloom composite + saturation */
+/** Lusion frag$2 bloom composite + saturation + light scroll-paint RGB shift */
 const CompositeFrag = /* glsl */ `
 varying vec2 v_uv;
 uniform sampler2D u_texture;
 uniform float u_saturation;
+uniform float u_scrollPaint;
 uniform sampler2D u_blurTexture0;
 uniform sampler2D u_blurTexture1;
 uniform sampler2D u_blurTexture2;
@@ -91,13 +92,24 @@ uniform sampler2D u_blurTexture3;
 uniform sampler2D u_blurTexture4;
 uniform float u_bloomWeights[5];
 void main() {
-  vec4 c = texture2D(u_texture, v_uv);
+  // Soft radial warp from scroll velocity (approximates Lusion screenPaint)
+  vec2 toCenter = v_uv - 0.5;
+  float paint = clamp(u_scrollPaint, 0.0, 1.0);
+  vec2 warp = toCenter * paint * 0.012;
+  vec2 uv = v_uv + warp;
+  vec2 rgbShift = normalize(toCenter + 1e-5) * paint * 0.0035;
+  vec4 c = vec4(
+    texture2D(u_texture, uv + rgbShift).r,
+    texture2D(u_texture, uv).g,
+    texture2D(u_texture, uv - rgbShift).b,
+    1.0
+  );
   vec3 bloom =
-    u_bloomWeights[0] * texture2D(u_blurTexture0, v_uv).rgb +
-    u_bloomWeights[1] * texture2D(u_blurTexture1, v_uv).rgb +
-    u_bloomWeights[2] * texture2D(u_blurTexture2, v_uv).rgb +
-    u_bloomWeights[3] * texture2D(u_blurTexture3, v_uv).rgb +
-    u_bloomWeights[4] * texture2D(u_blurTexture4, v_uv).rgb;
+    u_bloomWeights[0] * texture2D(u_blurTexture0, uv).rgb +
+    u_bloomWeights[1] * texture2D(u_blurTexture1, uv).rgb +
+    u_bloomWeights[2] * texture2D(u_blurTexture2, uv).rgb +
+    u_bloomWeights[3] * texture2D(u_blurTexture3, uv).rgb +
+    u_bloomWeights[4] * texture2D(u_blurTexture4, uv).rgb;
   gl_FragColor = vec4(c.rgb + bloom, 1.0);
   float luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
   gl_FragColor.rgb = mix(vec3(luma), gl_FragColor.rgb, u_saturation);
@@ -216,6 +228,7 @@ export function createTunnelPost(renderer, scene, camera) {
     uniforms: {
       u_texture: { value: null },
       u_saturation: { value: 1 },
+      u_scrollPaint: { value: 0 },
       u_blurTexture0: { value: null },
       u_blurTexture1: { value: null },
       u_blurTexture2: { value: null },
@@ -229,6 +242,7 @@ export function createTunnelPost(renderer, scene, camera) {
     depthWrite: false,
     toneMapped: false,
   })
+  let scrollPaint = 0
 
   const efxMat = new THREE.ShaderMaterial({
     uniforms: {
@@ -501,6 +515,12 @@ export function createTunnelPost(renderer, scene, camera) {
     },
     setEnabled(v) {
       enabled = !!v
+    },
+    setScrollVelocity(v) {
+      // Ease toward scroll energy (Lusion screenPaint feel, lighter)
+      const target = Math.min(1, Math.abs(v) * 0.35)
+      scrollPaint += (target - scrollPaint) * 0.15
+      compositeMat.uniforms.u_scrollPaint.value = scrollPaint
     },
     destroy() {
       sceneRT.dispose()
