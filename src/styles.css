@@ -594,7 +594,7 @@ button {
 #home-goal {
   display: block;
   padding: 0;
-  padding-bottom: calc(var(--vh, 1vh) * 2200);
+  padding-bottom: calc(var(--vh, 1vh) * 1100);
   position: relative;
   min-height: calc(var(--vh, 1vh) * 100);
 }
@@ -850,7 +850,7 @@ button {
     grid-column: 1 / -1;
   }
   #home-goal {
-    padding-bottom: calc(var(--vh, 1vh) * 1600);
+    padding-bottom: calc(var(--vh, 1vh) * 900);
   }
   .home-goal-tunnel-title-line {
     white-space: normal;

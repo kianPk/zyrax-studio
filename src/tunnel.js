@@ -502,6 +502,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     line.innerHTML = words.map((w) => `<span class="goal-word">${w}</span>`).join(' ')
   })
 
+  const stickyEl = canvas.parentElement || sectionEl
   const ranges = createGoalRanges(sectionEl)
   let whiteTunnelRatio = 0
   let showRatio = 0
@@ -514,7 +515,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let active = false
 
   const resize = () => {
-    const parent = canvas.parentElement || sectionEl
+    const parent = stickyEl
     const w = parent.clientWidth || window.innerWidth
     const h = parent.clientHeight || window.innerHeight
     camera.aspect = w / Math.max(h, 1)
@@ -645,7 +646,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       paras.style.transform = `translateY(${(1 - pr) * 40}px)`
     }
 
-    active = rect.bottom > 0 && rect.top < vh * 1.15
+    // sticky viewport visibility (section itself is thousands of vh tall)
+    const stickyRect = stickyEl.getBoundingClientRect()
+    active = stickyRect.bottom > 0 && stickyRect.top < vh
     sectionEl.dataset.goalPhase =
       whiteTunnelRatio > 0.01 ? 'white' : blackTunnelRatio > 0.01 ? 'black-tunnel' : 'title'
   }
@@ -659,10 +662,6 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
     if (!active) return
-    // cap ~30fps when both GPU scenes exist
-    if (dt < 0.028 && !isMobile) {
-      /* allow full rate on desktop when light */
-    }
 
     // bone loop 0–89 early; 140–287 in white/out (Lusion)
     const r = whiteTunnelRatio

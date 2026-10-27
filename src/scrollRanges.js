@@ -2,15 +2,15 @@
  * Weighted scroll ranges — port of Lusion GoalSectionRanges (simplified).
  */
 export const GOAL_ITEMS = [
-  { id: 'blackFrameShow', weight: 0.8 },
-  { id: 'blackFrameIn', weight: 1 },
-  { id: 'blackTitle', weight: 5 },
-  { id: 'blackTunnel', weight: 10 },
-  { id: 'whiteTunnel', weight: 2.5 },
-  { id: 'whiteFrameOut', weight: 1 },
-  { id: 'whiteFrameBreak', weight: 1.2 },
-  { id: 'astronautDrop', weight: 1.5 },
-  { id: 'astronautWait', weight: 0.8 },
+  { id: 'blackFrameShow', weight: 0.25 },
+  { id: 'blackFrameIn', weight: 0.4 },
+  { id: 'blackTitle', weight: 3.2 },
+  { id: 'blackTunnel', weight: 6 },
+  { id: 'whiteTunnel', weight: 2.2 },
+  { id: 'whiteFrameOut', weight: 0.9 },
+  { id: 'whiteFrameBreak', weight: 1 },
+  { id: 'astronautDrop', weight: 1.2 },
+  { id: 'astronautWait', weight: 0.5 },
 ]
 
 export function fit(v, a, b, c, d) {
