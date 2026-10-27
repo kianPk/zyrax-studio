@@ -509,12 +509,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blackTunnelGroup.add(streak)
   }
 
-  // title word split for Lusion-style expand
-  const titleLines = titleEl ? Array.from(titleEl.querySelectorAll('.home-goal-tunnel-title-line')) : []
-  titleLines.forEach((line) => {
-    const words = line.textContent.trim().split(/\s+/)
-    line.innerHTML = words.map((w) => `<span class="goal-word">${w}</span>`).join(' ')
-  })
+  // title DOM owned by goalDom.js — do not re-split words here
 
   const stickyEl = canvas.parentElement || sectionEl
   const ranges = createGoalRanges(sectionEl)
