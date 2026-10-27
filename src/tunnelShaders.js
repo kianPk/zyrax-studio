@@ -112,6 +112,9 @@ uniform vec3 u_sunPosition;
 uniform float u_frameOutRatio;
 uniform float u_whiteTunnelRatio;
 uniform vec3 u_tintColor;
+uniform float u_faceLedLight;
+uniform vec3 u_faceLedColor;
+uniform vec3 u_cardPosition;
 
 float getMetalShininess(vec3 viewDir, vec3 lightPosition, vec3 worldNormal, float roughness, float metalness) {
   vec3 lightDir = normalize(lightPosition - v_worldPosition);
@@ -168,6 +171,17 @@ ${astronautCommonBody}
     * (cos(u_whiteTunnelRatio * 6.283185307179586 * 5.0) * 0.3 + 0.7)
     * 3.5 * (1.0 - metalness);
   color = mix(tunnelColor, color, outOfFrameRatio) * (0.7 + armb.r * 0.3);
+  // Face LED panel light (Lusion fragWhite)
+  vec3 ledLightPos = u_cardPosition;
+  vec3 ledLightDir = ledLightPos - v_worldPosition;
+  float ledLightDist = max(length(ledLightDir), 0.001);
+  ledLightDir /= ledLightDist;
+  float attenuationLed = 1.0 / (16.0 * ledLightDist);
+  color += attenuationLed * u_faceLedLight * u_faceLedColor
+    * getMetalShininess(V, u_cardPosition, N, (1.0 - metalness), metalness);
+  attenuationLed = 1.0 / (16.0 * ledLightDist * ledLightDist);
+  color += 0.5 * u_faceLedLight * u_faceLedColor * albedo * attenuationLed
+    * (0.5 + 0.5 * saturate(dot(ledLightDir, N)));
   gl_FragColor.rgb = mix(u_bgColor, color, vec3(u_showRatio * 0.8 + 0.2));
 #ifndef IS_HELMET_GLASS
   gl_FragColor.rgb += outOfFrameRatio * max(worldNormal.z * 2.0 * sunNdL, metalness)
@@ -177,6 +191,26 @@ ${astronautCommonBody}
   gl_FragColor.rgb *= 0.95 + mix(u_tintColor, vec3(1.0), v_ao) * 0.1;
   gl_FragColor.rgb *= mix(1.0, metalMask * 0.7 + 0.3, linearStep(0.8, 1.0, u_frameOutRatio));
   gl_FragColor.a = 1.0;
+}
+`
+
+/** Lusion GoalTunnelAstronauts fragCard — LED face panel on helmet. */
+export const astronautCardFrag = /* glsl */ `
+uniform sampler2D u_cardTexture;
+uniform sampler2D u_cardLedTexture;
+uniform vec2 u_cardUvOffset;
+uniform vec2 u_cardTextureSize;
+uniform vec3 u_cardColor;
+uniform float u_cardOpacity;
+uniform float u_time;
+varying vec2 v_uv;
+void main() {
+  vec2 uv = v_uv / u_cardTextureSize;
+  vec4 texel = texture2D(u_cardTexture, uv + u_cardUvOffset);
+  vec3 ledTexture = pow(texture2D(u_cardLedTexture, fract(v_uv * vec2(20.0, 15.0))).rgb, vec3(2.2));
+  float ledMask = dot(ledTexture, u_cardColor * texel.r);
+  gl_FragColor.rgb = pow(ledTexture, vec3(1.0 / 2.2)) * ledMask * 2.5 * u_cardOpacity;
+  gl_FragColor.a = texel.r * 0.35 * u_cardOpacity;
 }
 `
 

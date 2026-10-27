@@ -19,9 +19,10 @@ import {
   whiteTunnelFrag,
   astronautWhiteFrag,
   astronautBlackFrag,
+  astronautCardFrag,
 } from './tunnelShaders.js'
 import { createTunnelPost } from './tunnelPost.js'
-import { BrownianMotion, SecondOrderDynamics } from './lusionMotion.js'
+import { BrownianMotion, SecondOrderDynamics, Simple1DNoise } from './lusionMotion.js'
 import { easeSineInOut } from './scrollMath.js'
 import { createWhiteTunnelExtras } from './whiteTunnelExtras.js'
 
@@ -315,6 +316,10 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     u_frameOutRatio: { value: 0 },
     u_tintColor: { value: new THREE.Color(0, 0, 0) },
     u_time: { value: 0 },
+    // Face LED panel light (Lusion whiteTunnelUniforms)
+    u_faceLedLight: { value: 0 },
+    u_faceLedColor: { value: new THREE.Color('#aaaafb') },
+    u_cardPosition: { value: new THREE.Vector3() },
   }
 
   const blackAstroUniforms = {
@@ -458,6 +463,91 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cloneMeshes.push(cmesh)
     }
   })
+
+  // —— Face LED card (Lusion partId "card") — Plane 0.2×0.15 on helmet bone 0 ——
+  const cardTextureSize = new THREE.Vector2(5, 23)
+  const cardNoise = new Simple1DNoise()
+  let cardTime = 0
+  let isCardActive = false
+  const ledCanvas = document.createElement('canvas')
+  ledCanvas.width = ledCanvas.height = 11
+  {
+    const lctx = ledCanvas.getContext('2d')
+    lctx.fillStyle = '#000'
+    lctx.fillRect(0, 0, 11, 11)
+    lctx.fillStyle = '#f00'
+    lctx.fillRect(1, 1, 3, 9)
+    lctx.fillStyle = '#0f0'
+    lctx.fillRect(4, 1, 3, 9)
+    lctx.fillStyle = '#00f'
+    lctx.fillRect(7, 1, 3, 9)
+  }
+  const ledTex = new THREE.CanvasTexture(ledCanvas)
+  ledTex.needsUpdate = true
+  ledTex.minFilter = THREE.LinearFilter
+  ledTex.magFilter = THREE.LinearFilter
+  const faceTex = await new THREE.TextureLoader().loadAsync(
+    `${base}assets/textures/tunnels/astronaut/face.png`
+  )
+  faceTex.minFilter = THREE.NearestFilter
+  faceTex.magFilter = THREE.NearestFilter
+  faceTex.colorSpace = THREE.NoColorSpace
+  faceTex.flipY = false
+  const cardGeo = new THREE.PlaneGeometry(0.2, 0.15).translate(0, 1.68, 0.1)
+  cardGeo.setAttribute(
+    'boneIndices',
+    new THREE.BufferAttribute(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]), 2)
+  )
+  cardGeo.setAttribute(
+    'boneWeights',
+    new THREE.BufferAttribute(new Float32Array([1, 0, 1, 0, 1, 0, 1, 0]), 2)
+  )
+  cardGeo.setAttribute(
+    'tangent',
+    new THREE.BufferAttribute(
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      4
+    )
+  )
+  cardGeo.setAttribute('ao', new THREE.BufferAttribute(new Float32Array([1, 1, 1, 1]), 1))
+  const cardIg = new THREE.InstancedBufferGeometry()
+  for (const key in cardGeo.attributes) cardIg.setAttribute(key, cardGeo.attributes[key])
+  if (cardGeo.index) cardIg.setIndex(cardGeo.index)
+  cardIg.instanceCount = 1
+  cardIg.setAttribute('instancePos', instancePos)
+  cardIg.setAttribute('instanceOrient', instanceOrient)
+  cardIg.setAttribute('instanceAnimationFrameFromToBlend1', blend1)
+  cardIg.setAttribute('instanceAnimationFrameFromToBlend2', blend2)
+  const faceCardMat = new THREE.ShaderMaterial({
+    uniforms: {
+      ...sharedUniforms,
+      u_cardLedTexture: { value: ledTex },
+      u_cardTexture: { value: faceTex },
+      u_cardColor: { value: new THREE.Color('#ddddff') },
+      u_cardUvOffset: { value: new THREE.Vector2(0, 0) },
+      u_cardTextureSize: { value: cardTextureSize },
+      u_cardOpacity: { value: 0 },
+    },
+    vertexShader: astronautVert,
+    fragmentShader: astronautCardFrag,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
+    blendEquationAlpha: THREE.AddEquation,
+    blendSrcAlpha: THREE.OneFactor,
+    blendDstAlpha: THREE.OneFactor,
+    defines: { BONE_COUNT },
+  })
+  const faceCardMesh = new THREE.Mesh(cardIg, faceCardMat)
+  faceCardMesh.frustumCulled = false
+  faceCardMesh.renderOrder = 100
+  faceCardMesh.visible = false
+  astronautRoot.add(faceCardMesh)
 
   // —— White tunnel (Lusion GoalWhiteTunnel) ——
   const tunnelGroup = new THREE.Group()
@@ -758,12 +848,15 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let blackFrameInRatio = 0
   let whiteFrameBreak = 0
   let whiteFrameRatio = 0
+  let whiteFrameOutRatio = 0
   let whiteTunnelWaitRatio = 0
   let astronautDropRatio = 0
+  let whiteTunnelAstronautRatio = 0
   let isBlackTitleActive = true
   let isBlackTunnelActive = false
   let isWhiteTunnelActive = false
   let animationTime = 0
+  let pauseLoopTime = 0
   let deltaTimeMultiplier = 1
   let raf = 0
   let last = performance.now()
@@ -791,16 +884,17 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   resize()
   window.addEventListener('resize', resize)
 
-  const samplePath = (geo, t01) => {
+  /** Lusion path sample: frame index 0..(frameCount-1), not normalized t. */
+  const samplePathByFrame = (geo, frame, frameCount = 100) => {
     const pos = geo.attributes.position.array
     const ori = geo.attributes.orient.array
-    const n = pos.length / 3
-    const f = Math.max(0, Math.min(n - 1.0001, t01 * (n - 1)))
-    const i0 = Math.floor(f)
-    const i1 = Math.min(n - 1, i0 + 1)
-    const t = f - i0
+    const i0 = Math.min(Math.floor(frame), frameCount - 1)
+    const i1 = Math.min(Math.ceil(frame), frameCount - 1)
+    const t = frame - Math.floor(frame)
     const p = new THREE.Vector3().fromArray(pos, i0 * 3).lerp(new THREE.Vector3().fromArray(pos, i1 * 3), t)
-    const q = new THREE.Quaternion().fromArray(ori, i0 * 4).slerp(new THREE.Quaternion().fromArray(ori, i1 * 4), t)
+    const q = new THREE.Quaternion()
+      .fromArray(ori, i0 * 4)
+      .slerp(new THREE.Quaternion().fromArray(ori, i1 * 4), t)
     return { p, q }
   }
 
@@ -818,8 +912,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     blackTunnelRatio = ranges.range('blackTunnel').ratio
     whiteFrameRatio = ranges.range('whiteTunnel').ratio
     whiteTunnelRatio = ranges.between('whiteTunnel', 'whiteFrameOut').ratio
+    whiteFrameOutRatio = ranges.range('whiteFrameOut').ratio
     whiteFrameBreak = ranges.range('whiteFrameBreak').ratio
-    const whiteTunnelAstronautRatio = ranges.between('whiteTunnel', 'whiteFrameBreak').ratio
+    whiteTunnelAstronautRatio = ranges.between('whiteTunnel', 'whiteFrameBreak').ratio
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
     whiteTunnelAstronautOutRatio = ranges.between('whiteFrameBreak', 'astronautWait').ratio
@@ -829,10 +924,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     isWhiteTunnelActive =
       whiteTunnelRatio <= 1 && !isBlackTunnelActive && !isBlackTitleActive
 
-    // Lusion astronaut showRatio — fade out as wait bloom/stickers take over
+    // Lusion GoalTunnelAstronauts.update showRatio — no wait fade (wave stays readable)
     showRatio = isWhiteTunnelActive
-      ? smoothstep(0, 0.15, whiteTunnelAstronautRatio) *
-        fit(whiteTunnelWaitRatio, 0, 0.12, 1, 0)
+      ? smoothstep(0, 0.15, whiteTunnelAstronautRatio)
       : 1
 
     // Stage3D bloom / halo — exact syncProperties curves
@@ -900,17 +994,22 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cmesh.visible = !isWhiteTunnelActive && clonesShowRatio > 0.01
     }
 
-    // Path base (Brownian applied per-tick with dt — Lusion updateTransforms)
+    // Path base — exact Lusion updateTransforms frame indices (0..99)
     let path
     if (isWhiteTunnelActive) {
       const frame =
         whiteTunnelRatio < 1
           ? fit(whiteTunnelRatio, 0, 1, 0, 79)
           : fit(astronautDropRatio, 0, 1, 79, 99)
-      path = samplePath(outAnim, frame / 99)
+      path = samplePathByFrame(outAnim, frame, 100)
       path.p.y -= (isMobile ? 0 : 0.4) * easeBackInOut(astronautDropRatio)
     } else {
-      path = samplePath(inAnim, easeCubicIn(Math.min(blackTitleRatio, 1)))
+      // M = 100 * cubicIn(blackTitleRatio)
+      path = samplePathByFrame(
+        inAnim,
+        100 * easeCubicIn(Math.min(blackTitleRatio, 1)),
+        100
+      )
     }
     basePathPos.copy(path.p)
     basePathQuat.copy(path.q)
@@ -1191,50 +1290,123 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     }
     applyCamera()
 
-    // bone loop — Lusion updateAnimation (per-instance timeShift)
+    // bone loop — exact Lusion GoalTunnelAstronauts.updateAnimation
     const drop = astronautDropRatio
+    const loopLinearBlend =
+      fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
+    sharedUniforms.u_loopLinearBlend.value = loopLinearBlend
+    const cardFade = fit(drop, 0.9, 1, 0, 1, easeCubicIn)
+    isCardActive = cardFade > 0
+
     let speed
     let loopFrom
     let loopTo
+    let allowWrap = true
     if (drop < 0.5) {
+      // Entry idle loop (frames 0–89)
+      pauseLoopTime = 0
       speed = smoothstep(-0.3, 1, blackTitleRatio) * 0.75
       loopFrom = 0
       loopTo = 89
+      faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
+      // Wave loop (frames 140–287) — frozen until drop≥0.9, then plays
       speed = fit(drop, 0.9, 1, 0, 1)
       loopFrom = 140
       loopTo = Math.min(frameCount - 1, 287)
+      const flicker = Math.min(
+        2,
+        Math.max(0, 0.5 + Math.max(0, cardNoise.getFbm(tunnelTime * 8, 3) + 0.5) * 4)
+      )
+      faceCardMat.uniforms.u_cardOpacity.value = flicker * cardFade
+      if (drop < 1) {
+        pauseLoopTime = Math.max(0, pauseLoopTime)
+        allowWrap = false
+      } else {
+        pauseLoopTime = 0
+      }
     }
-    animationTime += tunnelDeltaTime * speed * deltaTimeMultiplier
+
+    // Lusion order: advance clock first, THEN hard-reset while linear blend is fully on
+    if (pauseLoopTime === 0) {
+      animationTime += tunnelDeltaTime * speed * deltaTimeMultiplier
+    }
+    if (loopLinearBlend === 1) animationTime = 0
+
     const span = loopTo - loopFrom + 1
     const heroShift = partTimeShifts[0]
     const heroW = heroShift + animationTime
-    const heroE = (heroW * 60) % span
-    const heroI = Math.floor(heroE) + loopFrom
-    const heroF = ((Math.floor(heroE) + 1) % span) + loopFrom
+    let heroE = (heroW * 60) % span
+    let heroI = Math.floor(heroE)
+    let heroF = ((heroI + 1) % span) + loopFrom
+    heroI += loopFrom
+    if (heroF < heroI) {
+      if (!allowWrap) {
+        // Freeze on first wave frame (the clear "hand wave" hold)
+        heroF = heroI = loopFrom
+        animationTime = -heroShift
+        pauseLoopTime = Number.POSITIVE_INFINITY
+      }
+    }
     const heroBlend = heroE - Math.floor(heroE)
-    blend1.setXYZ(0, heroI, heroF, heroBlend)
+    blend1.setXYZ(0, heroI, heroF, allowWrap || heroF >= heroI ? heroBlend : 0)
     blend1.needsUpdate = true
 
-    const linearFrame = fit(whiteTunnelRatio + drop, 0.9, 2, 90, 139, easeQuartIn)
+    // Linear track blend — uses whiteFrameOutRatio + drop (NOT whiteTunnelRatio)
+    const linearFrame = fit(
+      whiteFrameOutRatio + drop,
+      0.9,
+      2,
+      90,
+      139,
+      easeQuartIn
+    )
     const u = Math.floor(linearFrame)
     const f = Math.ceil(linearFrame)
     const p = linearFrame - u
     blend2.setXYZ(0, u, f, p)
     blend2.needsUpdate = true
-    sharedUniforms.u_loopLinearBlend.value =
-      fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
+
+    // Card visible at drop ≥ 0.95 (Lusion meshes.card.visible)
+    faceCardMesh.visible = drop >= 0.95 && showRatio > 0.02
+
+    // updateCard — LED atlas scroll + suit faceLedLight pulse
+    cardTime = isCardActive ? cardTime + tunnelDeltaTime : 0
+    {
+      const tw = cardTextureSize.x
+      const th = cardTextureSize.y
+      const n = Math.floor((10 * cardTime) % (tw * (th + 1)))
+      const a = n / (tw * (th + 1))
+      const ledPulse = cUnMix(0, 0.15, a) * cUnMix(1, 0.9, a)
+      sharedUniforms.u_faceLedLight.value = ledPulse
+      faceCardMat.uniforms.u_cardUvOffset.value.set(
+        (n % tw) / tw,
+        (th - Math.floor(n / tw)) / th
+      )
+    }
+    // Light anchor slightly above astronaut root (Lusion +0.9 y)
+    sharedUniforms.u_cardPosition.value.set(
+      instancePos.getX(0),
+      instancePos.getY(0) + 0.9,
+      instancePos.getZ(0)
+    )
 
     if (clonesShowRatio > 0.01 && !isWhiteTunnelActive && !isBlackTitleActive) {
       for (let i = 0; i < CLONE_COUNT; i++) {
         cloneCycleShifts[i] = (cloneCycleShifts[i] + 0.2 * tunnelDeltaTime) % 1
-        cloneAnimTimes[i] += tunnelDeltaTime * speed * deltaTimeMultiplier
+        if (pauseLoopTime === 0) {
+          cloneAnimTimes[i] += tunnelDeltaTime * speed * deltaTimeMultiplier
+        }
         // Lusion: mix(0, timeShift, clonesShowRatio)
         const C = THREE.MathUtils.lerp(0, partTimeShifts[i + 1], clonesShowRatio)
         const w = C + cloneAnimTimes[i]
         const E = (w * 60) % span
-        const I = Math.floor(E) + loopFrom
-        const F = ((Math.floor(E) + 1) % span) + loopFrom
+        let I = Math.floor(E)
+        let F = ((I + 1) % span) + loopFrom
+        I += loopFrom
+        if (F < I && !allowWrap) {
+          F = I = loopFrom
+        }
         const blend = E - Math.floor(E)
         cloneBlend1.setXYZ(i, I, F, blend)
         cloneBlend2.setXYZ(i, u, f, p)
