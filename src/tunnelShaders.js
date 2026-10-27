@@ -92,10 +92,11 @@ const astronautCommonBody = /* glsl */ `
     tangentSpaceNormal.z * worldNormal
   );
   vec4 armb = texture2D(u_armbTexture, v_uv);
-  float ao = clamp(v_ao * max(armb.r, 0.15), 0.0, 1.0);
+  // Exact Lusion common — no AO/albedo floors (floors washed the entry suit + bloom)
+  float ao = v_ao * armb.r;
   float roughness = armb.g;
   float metalness = armb.b;
-  float albedo = max(armb.a, 0.12);
+  float albedo = armb.a;
   vec3 N = worldNormal;
   vec3 V = normalize(cameraPosition - v_worldPosition);
   vec3 reflection = normalize(reflect(-V, N));

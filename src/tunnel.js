@@ -45,23 +45,35 @@ function loadImage(url) {
 
 /** Mix arm RGB + base R→A into one RGBA texture (Lusion armb). */
 async function makeArmbTexture(armUrl, baseUrl) {
+  // Pack like Lusion textureHelper.mixChannels: arm RGB + base.R → A
+  // Use DataTexture (no canvas upload / mip bleed) so AO/albedo stay exact.
   const [arm, base] = await Promise.all([loadImage(armUrl), loadImage(baseUrl)])
+  const w = arm.width
+  const h = arm.height
   const c = document.createElement('canvas')
-  c.width = arm.width
-  c.height = arm.height
+  c.width = w
+  c.height = h
   const ctx = c.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(base, 0, 0, c.width, c.height)
-  const baseData = ctx.getImageData(0, 0, c.width, c.height)
-  ctx.clearRect(0, 0, c.width, c.height)
-  ctx.drawImage(arm, 0, 0, c.width, c.height)
-  const armData = ctx.getImageData(0, 0, c.width, c.height)
-  for (let i = 0; i < armData.data.length; i += 4) {
-    armData.data[i + 3] = baseData.data[i]
+  ctx.drawImage(base, 0, 0, w, h)
+  const baseData = ctx.getImageData(0, 0, w, h).data
+  ctx.clearRect(0, 0, w, h)
+  ctx.drawImage(arm, 0, 0, w, h)
+  const armData = ctx.getImageData(0, 0, w, h).data
+  const packed = new Uint8Array(w * h * 4)
+  for (let i = 0; i < packed.length; i += 4) {
+    packed[i] = armData[i]
+    packed[i + 1] = armData[i + 1]
+    packed[i + 2] = armData[i + 2]
+    packed[i + 3] = baseData[i] // albedo
   }
-  ctx.putImageData(armData, 0, 0)
-  const tex = new THREE.CanvasTexture(c)
+  const tex = new THREE.DataTexture(packed, w, h, THREE.RGBAFormat, THREE.UnsignedByteType)
   tex.colorSpace = THREE.NoColorSpace
   tex.flipY = false
+  tex.generateMipmaps = false
+  tex.minFilter = THREE.LinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.wrapS = THREE.ClampToEdgeWrapping
+  tex.wrapT = THREE.ClampToEdgeWrapping
   tex.needsUpdate = true
   return tex
 }
@@ -232,7 +244,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   // Post stack created after scene/camera exist (below)
 
   matcap.colorSpace = THREE.NoColorSpace
-  envMap.colorSpace = THREE.SRGBColorSpace
+  matcap.generateMipmaps = false
+  matcap.minFilter = THREE.LinearFilter
+  matcap.magFilter = THREE.LinearFilter
+  // Sample earth as raw bytes (custom ShaderMaterial — match Lusion, no sRGB decode)
+  envMap.colorSpace = THREE.NoColorSpace
+  envMap.generateMipmaps = false
+  envMap.minFilter = THREE.LinearFilter
+  envMap.magFilter = THREE.LinearFilter
   blockTex.colorSpace = THREE.SRGBColorSpace
   blockTex.wrapS = blockTex.wrapT = THREE.RepeatWrapping
 
@@ -329,6 +348,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       ])
       nor.colorSpace = THREE.NoColorSpace
       nor.flipY = false
+      nor.generateMipmaps = false
+      nor.minFilter = THREE.LinearFilter
+      nor.magFilter = THREE.LinearFilter
       partTex[part] = { armb, nor }
     })
   )
