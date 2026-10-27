@@ -143,7 +143,7 @@ document.querySelectorAll('[data-reveal]').forEach((el, i) => {
 // Lusion-like ease curve for text reveals
 const easeLusion = 'power3.out'
 
-const splitWords = (el, className = 'scrub-word') => {
+const splitScrubWords = (el, className = 'scrub-word') => {
   if (!el) return []
   const words = el.textContent.trim().split(/\s+/)
   el.textContent = ''
@@ -177,7 +177,7 @@ const splitChars = (el) => {
 // Bold Ideas — word rise like Lusion reel title
 ;[document.querySelector('#home-reel-title-line-1'), document.querySelector('#home-reel-title-line-2')].forEach(
   (line, lineIdx) => {
-    const words = splitWords(line)
+    const words = splitScrubWords(line)
     words.forEach((w, i) => {
       gsap.to(w, {
         y: 0,

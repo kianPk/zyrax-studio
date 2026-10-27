@@ -924,14 +924,8 @@ button {
   #home-featured-disclaimer {
     justify-self: start;
   }
-  .project-item:nth-child(n + 3) {
-    margin-top: 0;
-  }
   .project-item-line-1 {
     font-size: 2.5vw;
-  }
-  .project-item-line-2 {
-    font-size: 6.5vw;
   }
   #header-right-menu-btn-text {
     display: none;
