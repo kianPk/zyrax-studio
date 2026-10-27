@@ -302,13 +302,23 @@ export async function createScrollLines() {
     let a = saturate(-(screenY - factors[0] * vh) / (factors[1] * vh))
     a = easeQuadInOut(a)
 
-    const radius = 0.008 * fit(w, 540, 1920, 2, 1)
+    // Slightly thinner on phone so strokes don't dominate stacked mobile copy
+    const mobile = w <= 812
+    const radius = 0.008 * fit(w, 540, 1920, 2, 1) * (mobile ? 0.72 : 1)
     // Lusion: scaleX = vw/aspect.x = diag, scaleY = vh/aspect.y = diag
     const scaleX = w / _aspect.x
     const scaleY = h / _aspect.y
 
-    inner.position.x = data.margin.x * scaleX
-    inner.position.y = data.margin.y * scaleY - screenY
+    // Mobile: nudge goal arc aside so it frames stacked text instead of cutting it
+    let marginX = data.margin.x
+    let marginY = data.margin.y
+    if (mobile && data.id === 'goal') {
+      marginX = 0.42
+      marginY = -0.35
+    }
+
+    inner.position.x = marginX * scaleX
+    inner.position.y = marginY * scaleY - screenY
     inner.scale.set(scaleX, scaleY, 1)
 
     // Smooth draw-on — kills stair-step feel when Lenis eases

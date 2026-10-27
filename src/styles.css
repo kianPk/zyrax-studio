@@ -686,6 +686,7 @@ button {
 #home-goal-context {
   position: relative;
   z-index: 3;
+  grid-column: 1 / span 12;
   color: var(--color-black);
   padding: clamp(80px, 12vw, 180px) var(--base-padding-x) clamp(60px, 8vw, 120px);
 }
@@ -710,14 +711,21 @@ button {
   will-change: transform;
   overflow: hidden;
 }
-.home-goal-texts-paragraph {
+/* Lusion: absolute over title on desktop, stacked full-width on mobile */
+#home-goal-texts {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
   grid-column: 8 / 12;
-  opacity: 1;
-  font-size: clamp(1.05rem, 1.3vw, 1.5rem);
   line-height: 1.4;
+  font-size: 1.5em;
 }
-.home-goal-texts-paragraph p {
-  margin: 0 0 1.25em;
+.home-goal-texts-paragraph {
+  opacity: 1;
+}
+.home-goal-texts-paragraph:not(:first-child) {
+  margin-top: 1em;
 }
 #home-goal-tunnel-sticky {
   /* Lenis breaks CSS sticky — pin via JS (position:fixed) while section is active */
@@ -955,11 +963,46 @@ button {
     --base-padding-x: 25px;
     --base-padding-y: 25px;
   }
+
+  /* Header — Lusion circular pills */
+  #header-right-sound-btn {
+    display: none;
+  }
+  #header-right {
+    gap: 0;
+  }
+  #header-right-talk-btn,
+  #header-right-menu-btn {
+    position: relative;
+    width: 3.2em;
+    min-width: 3.2em;
+    padding: 0;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #header-right-talk-btn {
+    left: -0.5em;
+  }
+  #header-right-talk-btn-text {
+    display: none;
+  }
+  #header-right-menu-btn-text {
+    display: none;
+  }
+  #header-right-menu-btn-inner {
+    justify-content: center;
+    width: 100%;
+  }
+  #header-logo {
+    font-size: calc(var(--header-size) * 0.95);
+  }
+
   #home-hero-title {
     grid-column: 1 / span 12;
     font-size: 6vw;
     margin-top: calc(var(--base-padding-y) + var(--header-size) * 2);
   }
+  #home-reel-container,
   #home-reel-title,
   #home-reel-content,
   #home-reel-thumb-wrapper {
@@ -967,12 +1010,32 @@ button {
   }
   #home-reel-title {
     font-size: 13.8vw;
+    margin-bottom: 1em;
   }
   #home-reel-title-line-1 {
     padding-left: 0;
   }
+  #home-reel-title-inner > div {
+    overflow: visible;
+  }
+  #home-reel-video-title {
+    display: none;
+  }
+  #home-reel-cta {
+    opacity: 1;
+    margin-bottom: 6em;
+    margin-top: 3em;
+  }
+  #home-featured-title-top {
+    grid-column: 1 / span 12;
+  }
   #home-featured-title-wrapper {
     font-size: 15vw;
+  }
+  #home-featured-cta {
+    grid-column: 1 / span 12;
+    margin-top: 4em;
+    margin-bottom: 5em;
   }
   .project-item:nth-child(n + 3) {
     margin-top: 2em;
@@ -983,11 +1046,37 @@ button {
   #home-goal {
     padding-bottom: calc(var(--vh, 1vh) * 2000);
   }
+  #home-goal-context {
+    grid-column: 1 / span 12;
+    padding-top: calc(var(--base-padding-y) + var(--header-size) * 1.5);
+  }
+  #home-goal-context-inner {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  #home-goal-title {
+    grid-column: 1 / span 6;
+    font-size: 10vw;
+    width: inherit;
+    max-width: 100%;
+    margin-top: 0;
+    left: 0;
+    overflow: visible;
+  }
+  #home-goal-texts {
+    position: relative;
+    grid-column: 1 / span 6;
+    margin-top: 3em;
+    margin-bottom: 4em;
+    font-size: 1.125em;
+    left: auto;
+    top: auto;
+  }
   .home-goal-tunnel-title-line {
     white-space: normal;
   }
   #home-goal-tunnel-title {
     font-size: clamp(1.6rem, 7vw, 2.4rem);
+    top: 0;
   }
   #home-featured-title-top,
   .project-list,
@@ -1004,9 +1093,6 @@ button {
   }
   .project-item-line-1 {
     font-size: 2.5vw;
-  }
-  #header-right-menu-btn-text {
-    display: none;
   }
   #end-section-title {
     font-size: 14vw;

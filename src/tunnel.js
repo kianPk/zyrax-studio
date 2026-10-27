@@ -23,6 +23,7 @@ import {
 import { createTunnelPost } from './tunnelPost.js'
 import { BrownianMotion, SecondOrderDynamics } from './lusionMotion.js'
 import { easeSineInOut } from './scrollMath.js'
+import { createWhiteTunnelExtras } from './whiteTunnelExtras.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
@@ -460,7 +461,12 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   // —— White tunnel (Lusion GoalWhiteTunnel) ——
   const tunnelGroup = new THREE.Group()
   scene.add(tunnelGroup)
-  const fbmPos = new THREE.Vector3()
+  // Exact Lusion GoalWhiteTunnel BrownianMotion for occlusion sphere
+  const whiteFbm = new BrownianMotion()
+  whiteFbm.positionAmplitude = 2
+  whiteFbm.positionFrequency = 1
+  whiteFbm._enableRotationNoise = false
+  const fbmPos = whiteFbm.position
   let tunnelTime = 0
   let tunnelDeltaTime = 1
   let lastScrollY = typeof window !== 'undefined' ? window.scrollY : 0
@@ -495,6 +501,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   }
   const baseMat = makeBlockMesh(blockBase, false)
   const wallMat = makeBlockMesh(blockWall, true)
+
+  // Stickers + diamonds at astronautWait (Lusion white-tunnel end)
+  const whiteExtras = await createWhiteTunnelExtras(scene, {
+    base,
+    isMobile,
+    sharedTime: sharedUniforms.u_time,
+  })
 
   // Lusion clearAlpha:0 — bg must not write opaque alpha or bloom fills the screen
   const bgMatPlane = new THREE.ShaderMaterial({
@@ -1050,17 +1063,22 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   }
 
   const updateWhiteTunnel = (dt) => {
-    if (!isWhiteTunnelActive) return
-    // Approximate Lusion BrownianMotion for white tunnel occlusion sphere
-    fbmPos.set(
-      Math.sin(tunnelTime * 1.1) * 1.4 + Math.sin(tunnelTime * 2.4) * 0.6,
-      Math.cos(tunnelTime * 0.9) * 1.2 + Math.sin(tunnelTime * 1.7) * 0.5,
-      Math.sin(tunnelTime * 1.3 + 0.5) * 0.8
-    )
+    if (!isWhiteTunnelActive) {
+      whiteExtras.update({ whiteTunnelWaitRatio: 0, aspect: camera.aspect })
+      return
+    }
+    whiteFbm.update(dt)
     baseMat.uniforms.u_time.value = tunnelTime
     wallMat.uniforms.u_time.value = tunnelTime
     baseMat.uniforms.u_fbm.value = fbmPos
     wallMat.uniforms.u_fbm.value = fbmPos
+    const bgHex =
+      isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
+    whiteExtras.update({
+      whiteTunnelWaitRatio,
+      aspect: Math.max(camera.aspect, 0.01),
+      bg: bgHex,
+    })
   }
 
   const onScroll = () => updateScroll()
