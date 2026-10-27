@@ -353,8 +353,18 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
   })
   const diamondMesh = new THREE.Mesh(diamondIg, diamondMat)
   diamondMesh.frustumCulled = false
+  diamondMesh.renderOrder = 20
   diamondMesh.visible = false
+  // Lusion particles use additive-ish presence; One/Zero can vanish on some GPUs —
+  // NormalBlending keeps diamonds readable over the wait bloom.
+  diamondMat.blending = THREE.NormalBlending
+  diamondMat.blendSrc = THREE.SrcAlphaFactor
+  diamondMat.blendDst = THREE.OneMinusSrcAlphaFactor
+  diamondMat.blendSrcAlpha = THREE.SrcAlphaFactor
+  diamondMat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor
   container.add(diamondMesh)
+
+  stickerMesh.renderOrder = 15
 
   const bgColor = new THREE.Color(0x000000)
 

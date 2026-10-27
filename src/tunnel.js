@@ -826,9 +826,10 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     isWhiteTunnelActive =
       whiteTunnelRatio <= 1 && !isBlackTunnelActive && !isBlackTitleActive
 
-    // Lusion astronaut showRatio
+    // Lusion astronaut showRatio — fade out as wait bloom/stickers take over
     showRatio = isWhiteTunnelActive
-      ? smoothstep(0, 0.15, whiteTunnelAstronautRatio)
+      ? smoothstep(0, 0.15, whiteTunnelAstronautRatio) *
+        fit(whiteTunnelWaitRatio, 0, 0.12, 1, 0)
       : 1
 
     // Stage3D bloom / halo — exact syncProperties curves
@@ -863,6 +864,17 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     if (stickyEl) stickyEl.style.background = bg.getStyle()
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
+
+    // Header contrast while tunnel is pinned (Lusion swaps header text color)
+    const header = document.getElementById('header')
+    if (header) {
+      const onDark =
+        active &&
+        (isBlackTitleActive || isBlackTunnelActive || (isWhiteTunnelActive && astronautDropRatio >= 1))
+      const onWhiteTunnel = active && isWhiteTunnelActive && astronautDropRatio < 1
+      header.style.color = onDark || onWhiteTunnel ? '#ffffff' : ''
+      if (onWhiteTunnel) header.style.color = '#000000'
+    }
 
     const wasBlack = sectionEl.dataset.goalPhase === 'black-tunnel'
     const wasWhite = sectionEl.dataset.goalPhase === 'white'
