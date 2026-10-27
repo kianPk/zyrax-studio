@@ -363,6 +363,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   }
   const cloneMeshes = []
   let clonesShowRatio = 0
+  const cloneAlphaUniform = { value: 0 }
 
   PARTS.forEach((part, idx) => {
     const geo = partGeos[idx]
@@ -429,6 +430,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
           ...blackUniformsAstro,
           u_armbTexture: { value: partTex[texKey].armb },
           u_norTexture: { value: partTex[texKey].nor },
+          u_alpha: cloneAlphaUniform,
         },
         vertexShader: astronautVert,
         fragmentShader: astronautBlackFrag,
@@ -440,8 +442,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         blendEquation: THREE.AddEquation,
         blendSrc: THREE.OneFactor,
         blendDst: THREE.OneFactor,
+        blendEquationAlpha: THREE.AddEquation,
+        blendSrcAlpha: THREE.OneFactor,
+        blendDstAlpha: THREE.OneFactor,
         side: THREE.DoubleSide,
-        defines: { BONE_COUNT, IS_BLACK: true },
+        defines: { BONE_COUNT, IS_BLACK: true, IS_CLONE: true },
       })
       const cmesh = new THREE.Mesh(cig, cloneMat)
       cmesh.frustumCulled = false
@@ -491,9 +496,17 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const baseMat = makeBlockMesh(blockBase, false)
   const wallMat = makeBlockMesh(blockWall, true)
 
-  const bgMatPlane = new THREE.MeshBasicMaterial({ color: 0x000000 })
+  // Lusion clearAlpha:0 — bg must not write opaque alpha or bloom fills the screen
+  const bgMatPlane = new THREE.ShaderMaterial({
+    uniforms: { u_color: { value: new THREE.Color(0x000000) } },
+    vertexShader: /* glsl */ `void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader: /* glsl */ `uniform vec3 u_color;void main(){gl_FragColor=vec4(u_color,0.0);}`,
+    depthWrite: false,
+    blending: THREE.NoBlending,
+  })
   const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), bgMatPlane)
   bgPlane.position.z = -80
+  bgPlane.renderOrder = -10
   scene.add(bgPlane)
 
   // —— Black tunnel (Lusion GoalBlackTunnel grid_ld + grid_hd) ——
@@ -576,6 +589,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   let blackLinearTime = 0
   let cameraDollyZoomFovOffset = 0
   let baseCameraFov = EXPECTED_FOV
+  let prevBlackOffsetZ = 0
+  let prevBlackContainerZ = -80
+  let efxDeltaZ = 0
   // Exact Lusion BrownianMotion + SecondOrderDynamics for hero + clones
   const heroMotion = new BrownianMotion()
   heroMotion.positionFrequency = 0.2
@@ -810,17 +826,24 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     baseMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
     wallMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
 
-    // phase colors — pure black / white like Lusion (title + black tunnel = #000)
+    // phase colors — Lusion clearAlpha:0 on black; white tunnel opaque white
     const bg = new THREE.Color(
       isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
     )
-    bgMatPlane.color.copy(bg)
-    scene.background = bg
-    renderer.setClearColor(bg, 1)
+    bgMatPlane.uniforms.u_color.value.copy(bg)
+    // Keep scene.background null so post RT preserves fragment alpha (bloom mask)
+    scene.background = null
+    renderer.setClearColor(bg, post.clearAlpha)
     sharedUniforms.u_bgColor.value.copy(bg)
     if (stickyEl) stickyEl.style.background = bg.getStyle()
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
+
+    const wasBlack = sectionEl.dataset.goalPhase === 'black-tunnel'
+    const wasWhite = sectionEl.dataset.goalPhase === 'white'
+    if ((isBlackTunnelActive && !wasBlack) || (isWhiteTunnelActive && !wasWhite)) {
+      post.markEfxSync()
+    }
 
     // Switch astronaut materials (Lusion white vs black)
     const useWhiteMat = isWhiteTunnelActive
@@ -829,6 +852,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       if (mesh.material !== next) mesh.material = next
     }
     clonesShowRatio = isBlackTunnelActive ? smoothstep(0.2, 0.4, blackTunnelRatio) : 0
+    cloneAlphaUniform.value = clonesShowRatio
     for (const cmesh of cloneMeshes) {
       cmesh.visible = !isWhiteTunnelActive && clonesShowRatio > 0.01
     }
@@ -925,10 +949,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         : 'title'
   }
 
-  /** Lusion GoalBlackTunnel.update — offsetZ, show, colors, transform */
+  /** Lusion GoalBlackTunnel.update — offsetZ, show, colors, transform + efx delta */
   const updateBlackTunnel = (dt) => {
     if (!isBlackTunnelActive) {
       blackUniforms.u_showRatio.value = 0
+      post.setEfxOffset(0, 0)
       return
     }
     blackUniforms.u_showRatio.value = easeExpoIn(cUnMix(0, 0.1, blackTunnelRatio))
@@ -955,11 +980,21 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       (p + easeCubicInOut(g)) * GRID_SIZE +
       blackLinearTime * GRID_SIZE +
       blackTunnelRatio * GRID_SIZE * 10
+
+    // Lusion GoalTunnelEfx: accumulate container.z + offsetZ deltas
+    const containerZ = -80 * cUnMix(0.2, 0, blackTunnelRatio)
+    efxDeltaZ = 0
+    efxDeltaZ += containerZ - prevBlackContainerZ
+    efxDeltaZ += offsetZ - prevBlackOffsetZ
+    prevBlackContainerZ = containerZ
+    prevBlackOffsetZ = offsetZ
+    blackTunnelGroup.position.z = containerZ
+
     blackUniforms.u_offsetZ.value = offsetZ
     blackAstroUniforms.u_offsetZ.value = offsetZ
     blackUniforms.u_time.value = tunnelTime
 
-    // color cycling
+    // color cycling — snaps at mid-segment like Lusion
     const T = BLACK_COLOR_1.length * fit(blackTunnelRatio, 0.2, 1, 0, 1)
     const M = Math.floor(T)
     const S = Math.min(Math.ceil(T), BLACK_COLOR_1.length - 1)
@@ -974,7 +1009,13 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     colorA.lerp(colorB, snap)
     blackUniforms.u_color2.value.copy(colorA)
 
-    // FOV pulse also set in updateScroll; reinforce with live time
+    // GoalTunnelEfx offsets from Lusion black tunnel update
+    post.setEfxOffset(
+      efxDeltaZ * fit(blackTunnelRatio, 0, 0.2, 0, 1),
+      efxDeltaZ * transformRatio * 0.01
+    )
+    post.setEfxAmount(1)
+
     cameraDollyZoomFovOffset =
       Math.sin(blackTunnelRatio * 10 + tunnelTime) *
       7.5 *
@@ -1065,19 +1106,16 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       cloneBlend2.needsUpdate = true
     }
 
-    // Feedback: Lusion keeps astronaut in the trail; blit at quarter-res with matching u_resolution
+    // Feedback: Lusion HD onAfterRender blit → quarter-res (astronaut stays in trail)
     if (isBlackTunnelActive) {
-      const prevBg = scene.background
       const prevRes = blackUniforms.u_resolution.value.clone()
       tunnelGroup.visible = false
       bgPlane.visible = false
-      scene.background = new THREE.Color(0x000000)
-      // Keep astronaut visible so silhouette feeds the colorful trail (Lusion)
       astronautRoot.visible = showRatio > 0.02
       blackUniforms.u_feedbackTexture.value = feedbackRead.texture
       blackUniforms.u_resolution.value.set(feedbackWrite.width, feedbackWrite.height)
       renderer.setRenderTarget(feedbackWrite)
-      renderer.setClearColor(0x000000, 1)
+      renderer.setClearColor(0x000000, 0)
       renderer.clear()
       renderer.render(scene, camera)
       renderer.setRenderTarget(null)
@@ -1086,14 +1124,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       feedbackRead = feedbackWrite
       feedbackWrite = tmp
       blackUniforms.u_feedbackTexture.value = feedbackRead.texture
-      // Mipmapped feedback ≈ Lusion dual blur for suit env
       blackAstroUniforms.u_blackTunnelTexture.value = feedbackRead.texture
-      tunnelGroup.visible = false
       bgPlane.visible = true
-      scene.background = prevBg
     }
 
-    renderer.setClearColor(sharedUniforms.u_bgColor.value, 1)
+    renderer.setClearColor(sharedUniforms.u_bgColor.value, post.clearAlpha)
     post.render()
   }
   raf = requestAnimationFrame(tick)

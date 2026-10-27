@@ -1,111 +1,309 @@
 /**
- * Lusion Stage3D bloom + halo RGB-shift (exact halo fragment from hoisted.js).
+ * Lusion Stage3D bloom + halo + GoalTunnelEfx (exact high-pass uses rgb*alpha).
+ * clearAlpha must be 0 so only fragments that write bloom alpha glow.
  */
 import * as THREE from 'three'
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 
-/** Port of Lusion USE_HALO high-pass bloom fragment (ghost + RGB shift ring). */
-const HaloShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    u_haloStrength: { value: 0 },
-    u_haloRGBShift: { value: 0.015 },
-    u_haloWidth: { value: 0.6 },
-    u_haloMaskInner: { value: 0.3 },
-    u_haloMaskOuter: { value: 0.5 },
-    u_texelSize: { value: new THREE.Vector2(1, 1) },
-    u_aspect: { value: new THREE.Vector2(1, 1) },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 v_uv;
-    void main() {
-      v_uv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
-    uniform float u_haloStrength;
-    uniform float u_haloRGBShift;
-    uniform float u_haloWidth;
-    uniform float u_haloMaskInner;
-    uniform float u_haloMaskOuter;
-    uniform vec2 u_texelSize;
-    uniform vec2 u_aspect;
-    varying vec2 v_uv;
+const ITERATION = 5
 
-    void main() {
-      vec4 texel = texture2D(tDiffuse, v_uv);
-      if (u_haloStrength < 0.001) {
-        gl_FragColor = texel;
-        return;
-      }
-      // Lusion halo: ghost UV + spectral ring
-      vec2 toCenter = (v_uv - 0.5) * u_aspect;
-      vec2 ghostUv = 1.0 - (toCenter + 0.5);
-      vec2 ghostVec = (vec2(0.5) - ghostUv);
-      vec2 direction = length(ghostVec) > 1e-5 ? normalize(ghostVec) : vec2(0.0);
-      vec2 haloVec = direction * u_haloWidth;
-      float weight = length(vec2(0.5) - fract(ghostUv + haloVec));
-      weight = pow(1.0 - weight, 3.0);
-      vec3 distortion = vec3(-u_texelSize.x, 0.0, u_texelSize.x) * u_haloRGBShift;
-      float zoomBlurRatio = fract(atan(toCenter.y, toCenter.x) * 40.0) * 0.05 + 0.95;
-      ghostUv *= zoomBlurRatio;
-      vec2 haloUv = ghostUv + haloVec;
-      vec3 halo = vec3(
-        texture2D(tDiffuse, haloUv + direction * distortion.r).r,
-        texture2D(tDiffuse, haloUv + direction * distortion.g).g,
-        texture2D(tDiffuse, haloUv + direction * distortion.b).b
-      );
-      float mask = smoothstep(u_haloMaskInner, u_haloMaskOuter, length(toCenter));
-      halo *= weight * mask * u_haloStrength;
-      // subtle radial chromatic on base (lens feel)
-      vec3 shifted = vec3(
-        texture2D(tDiffuse, v_uv + direction * distortion.r * 0.5).r,
-        texture2D(tDiffuse, v_uv).g,
-        texture2D(tDiffuse, v_uv + direction * distortion.b * 0.5).b
-      );
-      vec3 color = mix(texel.rgb, shifted, clamp(u_haloStrength * 0.4, 0.0, 0.5));
-      color += halo;
-      gl_FragColor = vec4(color, texel.a);
-    }
-  `,
+const QuadVert = /* glsl */ `
+varying vec2 v_uv;
+void main() {
+  v_uv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`
+
+/** Lusion highPassFrag — rgb * a * amount + USE_HALO ghost ring */
+const HighPassFrag = /* glsl */ `
+uniform sampler2D u_texture;
+uniform float u_amount;
+uniform vec2 u_texelSize;
+uniform vec2 u_aspect;
+uniform float u_haloWidth;
+uniform float u_haloRGBShift;
+uniform float u_haloStrength;
+uniform float u_haloMaskInner;
+uniform float u_haloMaskOuter;
+varying vec2 v_uv;
+void main() {
+  vec2 uv = v_uv;
+  vec4 texel = texture2D(u_texture, uv);
+  float alpha = texel.a * u_amount;
+  gl_FragColor = vec4(texel.rgb * alpha, 1.0);
+  if (u_haloStrength > 0.001) {
+    vec2 toCenter = (uv - 0.5) * u_aspect;
+    vec2 ghostUv = 1.0 - (toCenter + 0.5);
+    vec2 ghostVec = (vec2(0.5) - ghostUv);
+    vec2 direction = length(ghostVec) > 1e-5 ? normalize(ghostVec) : vec2(0.0);
+    vec2 haloVec = direction * u_haloWidth;
+    float weight = length(vec2(0.5) - fract(ghostUv + haloVec));
+    weight = pow(1.0 - weight, 3.0);
+    // Lusion: distortion = texelSize * (haloRGBShift * screenWidth) ≈ ±haloRGBShift in UV
+    vec3 distortion = vec3(-1.0, 0.0, 1.0) * u_haloRGBShift;
+    float zoomBlurRatio = fract(atan(toCenter.y, toCenter.x) * 40.0) * 0.05 + 0.95;
+    ghostUv *= zoomBlurRatio;
+    vec2 haloUv = ghostUv + haloVec;
+    vec3 halo = vec3(
+      texture2D(u_texture, haloUv + direction * distortion.r).r,
+      texture2D(u_texture, haloUv + direction * distortion.g).g,
+      texture2D(u_texture, haloUv + direction * distortion.b).b
+    );
+    halo *= u_haloStrength * weight * smoothstep(u_haloMaskInner, u_haloMaskOuter, length(toCenter));
+    gl_FragColor.rgb += halo;
+  }
+}
+`
+
+const BlurFrag = /* glsl */ `
+varying vec2 v_uv;
+uniform sampler2D u_texture;
+uniform vec2 u_resolution;
+uniform vec2 u_direction;
+float gaussianPdf(in float x, in float sigma) {
+  return 0.39894 * exp(-0.5 * x * x / (sigma * sigma)) / sigma;
+}
+void main() {
+  vec2 invSize = 1.0 / u_resolution;
+  float fSigma = float(SIGMA);
+  float weightSum = gaussianPdf(0.0, fSigma);
+  vec3 diffuseSum = texture2D(u_texture, v_uv).rgb * weightSum;
+  for (int i = 1; i < KERNEL_RADIUS; i++) {
+    float x = float(i);
+    float w = gaussianPdf(x, fSigma);
+    vec2 uvOffset = u_direction * invSize * x;
+    diffuseSum += texture2D(u_texture, v_uv + uvOffset).rgb * w;
+    diffuseSum += texture2D(u_texture, v_uv - uvOffset).rgb * w;
+    weightSum += 2.0 * w;
+  }
+  gl_FragColor = vec4(diffuseSum / weightSum, 1.0);
+}
+`
+
+/** Lusion frag$2 bloom composite + saturation */
+const CompositeFrag = /* glsl */ `
+varying vec2 v_uv;
+uniform sampler2D u_texture;
+uniform float u_saturation;
+uniform sampler2D u_blurTexture0;
+uniform sampler2D u_blurTexture1;
+uniform sampler2D u_blurTexture2;
+uniform sampler2D u_blurTexture3;
+uniform sampler2D u_blurTexture4;
+uniform float u_bloomWeights[5];
+void main() {
+  vec4 c = texture2D(u_texture, v_uv);
+  vec3 bloom =
+    u_bloomWeights[0] * texture2D(u_blurTexture0, v_uv).rgb +
+    u_bloomWeights[1] * texture2D(u_blurTexture1, v_uv).rgb +
+    u_bloomWeights[2] * texture2D(u_blurTexture2, v_uv).rgb +
+    u_bloomWeights[3] * texture2D(u_blurTexture3, v_uv).rgb +
+    u_bloomWeights[4] * texture2D(u_blurTexture4, v_uv).rgb;
+  gl_FragColor = vec4(c.rgb + bloom, 1.0);
+  float luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+  gl_FragColor.rgb = mix(vec3(luma), gl_FragColor.rgb, u_saturation);
+  gl_FragColor.a = 1.0;
+}
+`
+
+/** Lusion GoalTunnelEfx — depth reprojection motion blur */
+const EfxFrag = /* glsl */ `
+uniform sampler2D u_texture;
+uniform sampler2D u_depthTexture;
+uniform mat4 u_projectionViewInverseMatrix;
+uniform mat4 u_prevProjectionViewMatrix;
+uniform vec2 u_aspect;
+uniform float u_amount;
+varying vec2 v_uv;
+void main() {
+  float depth = texture2D(u_depthTexture, v_uv).r;
+  vec4 ndc = vec4(v_uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 worldPos = u_projectionViewInverseMatrix * ndc;
+  worldPos /= worldPos.w;
+  vec4 prevPos = u_prevProjectionViewMatrix * worldPos;
+  prevPos /= prevPos.w;
+  prevPos.xy = prevPos.xy * 0.5 + 0.5;
+  vec2 velocity = (prevPos.xy - v_uv) / 16.0 * u_amount;
+  vec2 uv = v_uv;
+  vec4 color = vec4(0.0);
+  float weightSum = 0.0;
+  float weight = 1.0;
+  for (int i = 0; i < 16; i++) {
+    color += texture2D(u_texture, uv) * weight;
+    uv += velocity;
+    weightSum += weight;
+  }
+  gl_FragColor = color / max(weightSum, 1e-5);
+}
+`
+
+function makeRT(w, h, depth = false) {
+  const opts = {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType,
+    depthBuffer: depth,
+    stencilBuffer: false,
+  }
+  const rt = new THREE.WebGLRenderTarget(w, h, opts)
+  if (depth) {
+    rt.depthTexture = new THREE.DepthTexture(w, h)
+    rt.depthTexture.type = THREE.UnsignedShortType
+  }
+  return rt
 }
 
 export function createTunnelPost(renderer, scene, camera) {
-  const size = new THREE.Vector2()
+  const size = new THREE.Vector2(1, 1)
   renderer.getSize(size)
-  const composer = new EffectComposer(renderer)
-  const renderPass = new RenderPass(scene, camera)
-  composer.addPass(renderPass)
 
-  const bloomPass = new UnrealBloomPass(size.clone(), 0.5, 0.55, 0.6)
-  bloomPass.threshold = 0.55
-  bloomPass.strength = 0
-  bloomPass.radius = 0.55
-  composer.addPass(bloomPass)
-
-  const haloPass = new ShaderPass(HaloShader)
-  haloPass.material.uniforms.u_texelSize.value.set(1 / Math.max(size.x, 1), 1 / Math.max(size.y, 1))
-  haloPass.material.uniforms.u_aspect.value.set(size.x / Math.max(size.y, 1), 1)
-  composer.addPass(haloPass)
-
-  let bloomAmount = 0
-  let haloStrength = 0
-  let haloRGBShift = 0.015
-  let enabled = true
-
-  const resize = (w, h) => {
-    composer.setSize(w, h)
-    bloomPass.resolution.set(w, h)
-    haloPass.material.uniforms.u_texelSize.value.set(1 / Math.max(w, 1), 1 / Math.max(h, 1))
-    haloPass.material.uniforms.u_aspect.value.set(w / Math.max(h, 1), 1)
+  let sceneRT = makeRT(1, 1, true)
+  let efxRT = makeRT(1, 1, false)
+  let highPassRT = makeRT(1, 1, false)
+  const blurH = []
+  const blurV = []
+  for (let i = 0; i < ITERATION; i++) {
+    blurH.push(makeRT(1, 1))
+    blurV.push(makeRT(1, 1))
   }
 
-  /** Port of GoalTunnels.syncProperties bloom / halo curves. */
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial())
+  const quadScene = new THREE.Scene()
+  quadScene.add(quad)
+
+  const highPassMat = new THREE.ShaderMaterial({
+    uniforms: {
+      u_texture: { value: null },
+      u_amount: { value: 1 },
+      u_texelSize: { value: new THREE.Vector2(1, 1) },
+      u_aspect: { value: new THREE.Vector2(1, 1) },
+      u_haloWidth: { value: 0.6 },
+      u_haloRGBShift: { value: 0.015 },
+      u_haloStrength: { value: 0 },
+      u_haloMaskInner: { value: 0.3 },
+      u_haloMaskOuter: { value: 0.5 },
+    },
+    vertexShader: QuadVert,
+    fragmentShader: HighPassFrag,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  })
+
+  const blurMats = []
+  for (let i = 0; i < ITERATION; i++) {
+    const n = 3 + i * 2
+    blurMats.push(
+      new THREE.ShaderMaterial({
+        uniforms: {
+          u_texture: { value: null },
+          u_resolution: { value: new THREE.Vector2(1, 1) },
+          u_direction: { value: new THREE.Vector2(1, 0) },
+        },
+        defines: { KERNEL_RADIUS: n, SIGMA: n },
+        vertexShader: QuadVert,
+        fragmentShader: BlurFrag,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      })
+    )
+  }
+
+  const bloomWeights = new Float32Array(ITERATION)
+  const compositeMat = new THREE.ShaderMaterial({
+    uniforms: {
+      u_texture: { value: null },
+      u_saturation: { value: 1 },
+      u_blurTexture0: { value: null },
+      u_blurTexture1: { value: null },
+      u_blurTexture2: { value: null },
+      u_blurTexture3: { value: null },
+      u_blurTexture4: { value: null },
+      u_bloomWeights: { value: bloomWeights },
+    },
+    vertexShader: QuadVert,
+    fragmentShader: CompositeFrag,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  })
+
+  const efxMat = new THREE.ShaderMaterial({
+    uniforms: {
+      u_texture: { value: null },
+      u_depthTexture: { value: null },
+      u_projectionViewInverseMatrix: { value: new THREE.Matrix4() },
+      u_prevProjectionViewMatrix: { value: new THREE.Matrix4() },
+      u_aspect: { value: new THREE.Vector2(1, 1) },
+      u_amount: { value: 1 },
+    },
+    vertexShader: QuadVert,
+    fragmentShader: EfxFrag,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  })
+
+  const projectionViewMatrix = new THREE.Matrix4()
+  const prevProjectionViewMatrix = new THREE.Matrix4()
+  const projectionViewInverseMatrix = new THREE.Matrix4()
+  const finalPrevMatrix = new THREE.Matrix4()
+  const extraTransformMatrix = new THREE.Matrix4()
+  const offsetPosition = new THREE.Vector3()
+  const offsetRotation = new THREE.Euler()
+  const offsetScale = new THREE.Vector3(1, 1, 1)
+  const _q = new THREE.Quaternion()
+  let efxNeedsSync = true
+  let efxAmount = 1
+  let efxActive = false
+
+  let bloomAmount = 0
+  let bloomRadius = 0
+  let bloomSaturation = 1
+  let highPassMultiplier = 1
+  let haloStrength = 0
+  let haloRGBShift = 0.015
+  let haloWidth = 0.6
+  let haloMaskInner = 0.3
+  let haloMaskOuter = 0.5
+  let clearAlpha = 0
+  let enabled = true
+  let w = 1
+  let h = 1
+
+  const dirX = new THREE.Vector2(1, 0)
+  const dirY = new THREE.Vector2(0, 1)
+
+  const blit = (mat, target) => {
+    quad.material = mat
+    renderer.setRenderTarget(target)
+    renderer.clear()
+    renderer.render(quadScene, cam)
+  }
+
+  const resize = (nw, nh) => {
+    w = Math.max(1, Math.floor(nw))
+    h = Math.max(1, Math.floor(nh))
+    sceneRT.setSize(w, h)
+    efxRT.setSize(w, h)
+    highPassRT.setSize(w, h)
+    for (let i = 0; i < ITERATION; i++) {
+      const rw = Math.max(1, Math.floor(w / Math.pow(2, i)))
+      const rh = Math.max(1, Math.floor(h / Math.pow(2, i)))
+      blurH[i].setSize(rw, rh)
+      blurV[i].setSize(rw, rh)
+    }
+    highPassMat.uniforms.u_texelSize.value.set(1 / w, 1 / h)
+    // Lusion aspect for halo: l = h/sqrt(w^2+h^2)*2
+    const l = (h / Math.sqrt(w * w + h * h)) * 2
+    highPassMat.uniforms.u_aspect.value.set((w / h) * l, l)
+    efxMat.uniforms.u_aspect.value.set(w / Math.max(h, 1), 1)
+  }
+
+  /** Port of GoalTunnels.syncProperties bloom / halo curves (exact numbers). */
   const sync = ({
     blackFrameInRatio = 0,
     blackTitleRatio = 0,
@@ -116,10 +314,12 @@ export function createTunnelPost(renderer, scene, camera) {
     isWhiteTunnelActive = false,
     isBlackTunnelActive = false,
   } = {}) => {
+    // Exact Lusion haloStrength
     let hs =
       blackFrameInRatio *
       (THREE.MathUtils.lerp(0, 0.15, blackTitleRatio) +
         THREE.MathUtils.clamp((blackTunnelRatio - 0.2) / 0.2, 0, 1) * 0.25)
+    // fit(.65,.75, hs, .08)
     if (blackTunnelRatio >= 0.65) {
       const t = THREE.MathUtils.clamp((blackTunnelRatio - 0.65) / 0.1, 0, 1)
       hs = hs + (0.08 - hs) * t
@@ -127,60 +327,193 @@ export function createTunnelPost(renderer, scene, camera) {
     if (isWhiteTunnelActive) hs = 0
     haloStrength = hs
 
-    let ba
-    let thr
-    if (isWhiteTunnelActive) {
-      ba =
-        astronautDropRatio < 1
-          ? THREE.MathUtils.lerp(0.55, 0.35, THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1))
-          : THREE.MathUtils.lerp(0, 0.9, THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1))
-      thr = 0.45
-    } else {
-      // Lusion bloomAmount fit(0,.25,30,6) → UnrealBloom ~0.9→0.4
-      const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
-      ba = THREE.MathUtils.lerp(0.95, 0.4, t)
-      thr = THREE.MathUtils.lerp(0.45, 0.65, t)
-      if (isBlackTunnelActive) {
-        ba = THREE.MathUtils.lerp(0.5, 0.9, THREE.MathUtils.clamp(blackTunnelRatio / 0.45, 0, 1))
-        thr = THREE.MathUtils.lerp(0.55, 0.3, THREE.MathUtils.clamp(blackTunnelRatio / 0.35, 0, 1))
-        if (blackTunnelRatio > 0.65) {
-          ba = THREE.MathUtils.lerp(ba, 0.4, THREE.MathUtils.clamp((blackTunnelRatio - 0.65) / 0.2, 0, 1))
-        }
-      }
-    }
-    bloomAmount = ba
-    const bloomSaturation =
+    // bloomSaturation fit(blackTunnelRatio, 0, .7, 1, 3)
+    bloomSaturation =
       blackTunnelRatio < 1
-        ? THREE.MathUtils.lerp(1, 2.8, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
+        ? THREE.MathUtils.lerp(1, 3, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
         : 1
 
-    bloomPass.strength = bloomAmount
-    bloomPass.radius = 0.5 + bloomSaturation * 0.15
-    bloomPass.threshold = thr
-    haloPass.material.uniforms.u_haloStrength.value = haloStrength
-    haloPass.material.uniforms.u_haloRGBShift.value = haloRGBShift
-    haloPass.material.uniforms.u_haloWidth.value = isBlackTunnelActive ? 0.72 : 0.6
-    haloPass.material.uniforms.u_haloMaskInner.value = isBlackTunnelActive ? 0.2 : 0.3
-    haloPass.material.uniforms.u_haloMaskOuter.value = isBlackTunnelActive ? 0.65 : 0.5
+    if (isWhiteTunnelActive) {
+      // fit whiteFrame 0..05 → 4..2, or wait → 0..20
+      bloomAmount =
+        astronautDropRatio < 1
+          ? THREE.MathUtils.lerp(4, 2, THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1))
+          : THREE.MathUtils.lerp(0, 20, THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1))
+      clearAlpha = THREE.MathUtils.lerp(
+        0.3,
+        0,
+        THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
+      )
+    } else {
+      // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel
+      const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
+      bloomAmount = THREE.MathUtils.lerp(30, 6, t)
+      clearAlpha = 0
+    }
+
+    haloWidth = 0.6
+    haloRGBShift = 0.015
+    haloMaskInner = 0.3
+    haloMaskOuter = 0.5
+    bloomRadius = 0
+    highPassMultiplier = 1
+    efxActive = isBlackTunnelActive || isWhiteTunnelActive
+  }
+
+  const setEfxOffset = (dz, rotZ = 0) => {
+    offsetPosition.set(0, 0, dz)
+    offsetRotation.set(0, 0, rotZ)
+  }
+
+  const markEfxSync = () => {
+    efxNeedsSync = true
+  }
+
+  const renderFullscreen = (mat, target) => {
+    const prevAuto = renderer.autoClear
+    renderer.autoClear = true
+    blit(mat, target)
+    renderer.autoClear = prevAuto
   }
 
   const render = () => {
-    if (!enabled || (bloomAmount < 0.02 && haloStrength < 0.005)) {
+    if (!enabled) {
+      renderer.setRenderTarget(null)
       renderer.render(scene, camera)
       return
     }
-    composer.render()
+
+    // 1) Scene → RT (preserve alpha for Lusion bloom)
+    const prevTarget = renderer.getRenderTarget()
+    const prevAutoClear = renderer.autoClear
+    renderer.setRenderTarget(sceneRT)
+    renderer.autoClear = true
+    renderer.setClearColor(scene.background?.isColor ? scene.background.getHex() : 0x000000, clearAlpha)
+    renderer.clear()
+    const prevBg = scene.background
+    scene.background = null
+    renderer.render(scene, camera)
+    scene.background = prevBg
+
+    // 2) GoalTunnelEfx velocity blur
+    let fromTex = sceneRT.texture
+    projectionViewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    projectionViewInverseMatrix.copy(projectionViewMatrix).invert()
+
+    if (efxActive && efxAmount > 0) {
+      if (efxNeedsSync) {
+        prevProjectionViewMatrix.copy(projectionViewMatrix)
+        efxNeedsSync = false
+      }
+      extraTransformMatrix.compose(
+        offsetPosition,
+        _q.setFromEuler(offsetRotation),
+        offsetScale
+      )
+      extraTransformMatrix.invert()
+      finalPrevMatrix.copy(prevProjectionViewMatrix).multiply(extraTransformMatrix)
+
+      efxMat.uniforms.u_texture.value = sceneRT.texture
+      efxMat.uniforms.u_depthTexture.value = sceneRT.depthTexture
+      efxMat.uniforms.u_projectionViewInverseMatrix.value.copy(projectionViewInverseMatrix)
+      efxMat.uniforms.u_prevProjectionViewMatrix.value.copy(finalPrevMatrix)
+      efxMat.uniforms.u_amount.value = efxAmount
+      renderFullscreen(efxMat, efxRT)
+      fromTex = efxRT.texture
+      prevProjectionViewMatrix.copy(projectionViewMatrix)
+    } else {
+      prevProjectionViewMatrix.copy(projectionViewMatrix)
+      efxNeedsSync = true
+    }
+
+    // Skip heavy bloom if nothing to glow
+    if (bloomAmount < 0.05 && haloStrength < 0.005) {
+      // just blit scene
+      compositeMat.uniforms.u_texture.value = fromTex
+      for (let i = 0; i < ITERATION; i++) {
+        bloomWeights[i] = 0
+        compositeMat.uniforms[`u_blurTexture${i}`].value = fromTex
+      }
+      compositeMat.uniforms.u_saturation.value = 1
+      renderer.setRenderTarget(null)
+      blit(compositeMat, null)
+      renderer.autoClear = prevAutoClear
+      renderer.setRenderTarget(prevTarget)
+      return
+    }
+
+    // 3) High-pass + halo (Lusion: rgb * a * highPassMultiplier)
+    highPassMat.uniforms.u_texture.value = fromTex
+    highPassMat.uniforms.u_amount.value = highPassMultiplier
+    highPassMat.uniforms.u_haloStrength.value = haloStrength
+    highPassMat.uniforms.u_haloWidth.value = haloWidth
+    highPassMat.uniforms.u_haloRGBShift.value = haloRGBShift
+    highPassMat.uniforms.u_haloMaskInner.value = haloMaskInner
+    highPassMat.uniforms.u_haloMaskOuter.value = haloMaskOuter
+    renderFullscreen(highPassMat, highPassRT)
+
+    // 4) Separable gaussian pyramid
+    let current = highPassRT
+    for (let i = 0; i < ITERATION; i++) {
+      const mat = blurMats[i]
+      mat.uniforms.u_texture.value = current.texture
+      mat.uniforms.u_resolution.value.set(current.width, current.height)
+      mat.uniforms.u_direction.value = dirX
+      renderFullscreen(mat, blurH[i])
+      mat.uniforms.u_texture.value = blurH[i].texture
+      mat.uniforms.u_resolution.value.set(blurH[i].width, blurH[i].height)
+      mat.uniforms.u_direction.value = dirY
+      renderFullscreen(mat, blurV[i])
+      current = blurV[i]
+    }
+
+    // 5) Weights — Lusion: amount * (f + (1.2 - f*2)*radius) / 2^(ITERATION-u-1)
+    for (let u = 0; u < ITERATION; u++) {
+      const f = (ITERATION - u) / ITERATION
+      bloomWeights[u] =
+        bloomAmount * (f + (1.2 - f * 2) * bloomRadius) / Math.pow(2, ITERATION - u - 1)
+    }
+
+    // 6) Composite to screen
+    compositeMat.uniforms.u_texture.value = fromTex
+    compositeMat.uniforms.u_saturation.value = bloomSaturation
+    for (let i = 0; i < ITERATION; i++) {
+      compositeMat.uniforms[`u_blurTexture${i}`].value = blurV[i].texture
+    }
+    renderer.setRenderTarget(null)
+    blit(compositeMat, null)
+    renderer.autoClear = prevAutoClear
+    renderer.setRenderTarget(prevTarget)
   }
+
+  resize(size.x, size.y)
 
   return {
     resize,
     sync,
     render,
+    setEfxOffset,
+    markEfxSync,
+    setEfxAmount(v) {
+      efxAmount = v
+    },
+    get clearAlpha() {
+      return clearAlpha
+    },
     setEnabled(v) {
       enabled = !!v
     },
     destroy() {
-      composer.dispose()
+      sceneRT.dispose()
+      efxRT.dispose()
+      highPassRT.dispose()
+      blurH.forEach((r) => r.dispose())
+      blurV.forEach((r) => r.dispose())
+      highPassMat.dispose()
+      compositeMat.dispose()
+      efxMat.dispose()
+      blurMats.forEach((m) => m.dispose())
+      quad.geometry.dispose()
     },
   }
 }

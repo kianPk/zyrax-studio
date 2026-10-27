@@ -192,6 +192,9 @@ uniform float u_blackTunnelRatio;
 uniform float u_offsetZ;
 uniform float u_frameIn;
 uniform float u_endRatio;
+#ifdef IS_CLONE
+uniform float u_alpha;
+#endif
 
 float sdBoxFrame(vec3 p, vec3 b, float e) {
   p = abs(p) - b;
@@ -219,9 +222,15 @@ void main() {
 ${astronautCommonBody}
   vec2 uvDiff = cartesianToPolar(worldNormal);
   vec2 uvSpec = cartesianToPolar(reflection);
-  // bias mip level ~3 ≈ Lusion's dual blur on tunnel feedback
-  vec3 blackTunnelEnvDiff = texture2D(u_blackTunnelTexture, 0.25 * uvDiff, 3.0).rgb * 1.75;
-  vec3 blackTunnelEnvSpec = texture2D(u_blackTunnelTexture, 0.25 * uvSpec, 3.0).rgb * (0.35 + metalness * 0.9) * 2.4;
+  // Lusion samples feedback without forced bias (blur comes from dual-blur RT)
+  vec3 blackTunnelEnvDiff = texture2D(u_blackTunnelTexture, 0.25 * uvDiff).rgb;
+  vec3 blackTunnelEnvSpec = texture2D(u_blackTunnelTexture, 0.25 * uvSpec).rgb * (0.2 + metalness * 0.7) * 2.0;
+#ifdef IS_CLONE
+  // Exact Lusion clone ghost: env-only additive silhouette
+  gl_FragColor.rgb = (blackTunnelEnvDiff * 3.5 * blackTunnelEnvDiff + blackTunnelEnvSpec * 3.5)
+    * v_ao * u_alpha * (0.5 + fresnel * 0.9);
+  gl_FragColor.a = mix(max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b)) * u_alpha, 0.0, u_endRatio);
+#else
   mat4 frameInRotation = rotation3d(vec3(1.0, 0.0, 0.0), 0.2 + 1.0 * u_frameIn);
   vec3 viewDir = (vec4(normalize(v_worldPosition), 1.0) * frameInRotation).xyz;
   vec3 x = normalize(vec3(viewDir.z, 0.0, -viewDir.x));
@@ -252,14 +261,15 @@ ${astronautCommonBody}
   blackTunnelColor += exp(-sdf * 0.25) * blackTunnelEnvDiff * 2.0;
   gl_FragColor.rgb = color;
   gl_FragColor.rgb = mix(gl_FragColor.rgb, 0.3 * gl_FragColor.rgb + blackTunnelColor, clamp(u_blackTunnelRatio * 2.0 - 1.0 + ao, 0.0, 1.0));
-  // Keep suit readable against pure black (Lusion never fully silhouettes the hero)
-  gl_FragColor.rgb = max(gl_FragColor.rgb, vec3(0.04 + 0.08 * albedo));
-  gl_FragColor.rgb = mix(u_bgColor, gl_FragColor.rgb, vec3(max(u_showRatio, 0.85)));
-  gl_FragColor.rgb *= (0.45 + armb.r * 0.7);
+  gl_FragColor.rgb = mix(u_bgColor, gl_FragColor.rgb, vec3(u_showRatio));
+  gl_FragColor.rgb *= (0.3 + armb.r * 0.7);
   gl_FragColor.rgb += max(worldNormal.z * 2.0 * sunNdL, metalness)
     * texture2D(u_envTexture, 1.2 * (uv - 0.5) + vec2(0.5)).rgb * 0.75 * v_ao * (1.0 - u_blackTunnelRatio);
-  gl_FragColor.rgb += blackTunnelEnvDiff * (0.35 + u_blackTunnelRatio * 0.9) * ao;
-  gl_FragColor.a = 1.0;
-  gl_FragColor.a *= mix(1.0, 1.0 - u_endRatio, 0.35);
+  // Exact Lusion bloom alpha (NOT 1.0 — alpha drives Stage3D bloom)
+  gl_FragColor.a = 0.01 + 0.1 * max(0.0, gl_FragColor.g - 1.0 + metalness * 0.2) * (0.5 + metalness * 1.5)
+    + gl_FragColor.b * u_blackTunnelRatio * dot(vec3(0.299, 0.587, 0.114), blackTunnelColor) * 5.0;
+  gl_FragColor.a += metalShininess;
+  gl_FragColor.a *= (0.5 + fresnel * 0.9);
+#endif
 }
 `
