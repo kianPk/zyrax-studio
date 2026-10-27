@@ -46,8 +46,17 @@ export async function loadBuf(url) {
       I = R
     }
 
-    if (S === 'indices') c.setIndex(new BufferAttribute(I, 1))
-    else c.setAttribute(S, new BufferAttribute(I, C))
+    if (S === 'indices') {
+      // Three.js index buffers must be Uint16/Uint32 (Lusion sometimes packs Uint8)
+      let indexArr = I
+      if (I instanceof Uint8Array) {
+        indexArr = new Uint16Array(I.length)
+        indexArr.set(I)
+      }
+      c.setIndex(new BufferAttribute(indexArr, 1))
+    } else {
+      c.setAttribute(S, new BufferAttribute(I, C))
+    }
 
     l += b * C * E
   }
