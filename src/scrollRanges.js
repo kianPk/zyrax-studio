@@ -120,25 +120,41 @@ export function createGoalRanges(sectionEl) {
     baseY = (imgIn.top || section.top) - vh
 
     const showPx = (vh + inH) * 0.5
-    const dropPx = (vh + outH) * 0.5 + vh
+    // Enough runway for glass punch-through + one full wave (drop 0.9→1)
+    const dropPx = Math.max((vh + outH) * 0.5 + vh, vh * 1.85)
 
-    // Wait = space after goal until footer / page end (Lusion footer delta)
+    // Wait = end-section + footer after the goal (Lusion footer delta)
     const footer =
-      document.querySelector('footer') ||
-      document.getElementById('home-footer') ||
-      document.getElementById('site-footer')
-    const footerBottom = footer ? domRange(footer).bottom : document.documentElement.scrollHeight
-    const waitPx = Math.max(vh * 0.5, footerBottom - section.bottom)
+      document.getElementById('footer-section') ||
+      document.getElementById('end-section') ||
+      document.querySelector('footer')
+    const docBottom = document.documentElement.scrollHeight
+    const footerBottom = footer ? Math.max(domRange(footer).bottom, docBottom) : docBottom
+    let waitPx = Math.max(vh * 0.85, footerBottom - section.bottom)
+
+    // Max scroll progress we can actually reach (last viewport of the page)
+    const maxProgress = Math.max(vh * 12, docBottom - vh - baseY)
 
     // Tunnel weight runway between show and drop (Lusion `c`)
-    const tunnelSpan = Math.max(
+    let tunnelSpan = Math.max(
       vh * 8,
       section.bottom - baseY - showPx - dropPx
     )
 
+    // Fit ALL phases into scrollable page — otherwise drop/wave never finish
+    // (drop stuck ~0.9 at document end, wave never loops on white).
+    const fixedPx = showPx + dropPx + waitPx
+    if (fixedPx + tunnelSpan > maxProgress) {
+      tunnelSpan = Math.max(vh * 6, maxProgress - fixedPx)
+    }
+    if (fixedPx + tunnelSpan > maxProgress) {
+      // Still too long — shrink wait first, then drop floor
+      waitPx = Math.max(vh * 0.5, maxProgress - showPx - dropPx - tunnelSpan)
+    }
+
     items.blackFrameShow.pixelCount = showPx
     items.astronautDrop.pixelCount = dropPx
-    items.astronautWait.pixelCount = waitPx
+    items.astronautWait.pixelCount = Math.max(vh * 0.5, waitPx)
 
     totalPixelCount = 0
     for (const it of GOAL_ITEMS) {
@@ -147,8 +163,7 @@ export function createGoalRanges(sectionEl) {
       if (row.weight) {
         row.pixelCount = (tunnelSpan * row.weight) / totalTunnelWeight
       }
-      // Keep tablet→fullscreen tight: Lusion feels like ~1vh of scroll, not a
-      // long stretch of half-empty page while blackFrameIn crawls.
+      // Keep tablet→fullscreen tight
       if (row.id === 'blackFrameIn') {
         row.pixelCount = Math.min(row.pixelCount, vh * 1.15)
       }

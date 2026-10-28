@@ -3,6 +3,7 @@ import { loadBuf } from './bufLoader.js'
 import {
   createGoalRanges,
   fit,
+  clamp,
   cUnMix,
   easeCubicIn,
   easeCubicInOut,
@@ -1057,17 +1058,42 @@ void main(){
       isMobile,
     })
 
-    // GoalTunnelGlass — shatter as whiteFrameBreak progresses
+    // GoalTunnelGlass — Lusion drives ratio with getRange(whiteFrameBreak, astronautDrop)
     if (brokenGlass) {
+      const imgOutInner = sectionEl.querySelector('#home-goal-image-out-inner')
       const imgOut = sectionEl.querySelector('#home-goal-image-out')
       const outRect = imgOut?.getBoundingClientRect()
-      const frameH =
-        outRect && outRect.height > 8 ? outRect.height : stickyEl?.clientHeight || vh
-      // After whiteFrameOut the desktop frame is full-bleed; scale≈1, no tilt
-      const frameScale = fit(whiteFrameOutRatio, 0, 1, 1.15, 1)
-      const frameRotation = fit(whiteFrameOutRatio, 0, 1, -0.12, 0)
+      const outInnerRect = imgOutInner?.getBoundingClientRect()
+      // Prefer real out-frame height; fall back to aspect from inner width
+      let frameH =
+        outRect && outRect.height > 8
+          ? outRect.height
+          : outInnerRect && outInnerRect.height > 8
+            ? outInnerRect.height
+            : 0
+      if (frameH < 8) {
+        const w =
+          outInnerRect?.width ||
+          imgOutInner?.clientWidth ||
+          stickyEl?.clientWidth ||
+          window.innerWidth * 0.7
+        frameH = w * (1537 / 2000)
+      }
+      // Lusion: mix(1, diagonal/minSide, whiteFrameOut) while framed
+      const diag = Math.hypot(window.innerWidth, vh)
+      const minSide = Math.min(
+        outRect?.width > 8 ? outRect.width : frameH * (2000 / 1537),
+        frameH
+      )
+      const frameScale = THREE.MathUtils.lerp(
+        1,
+        diag / Math.max(minSide, 1),
+        clamp(whiteFrameOutRatio, 0, 1)
+      )
+      const frameRotation = fit(whiteFrameOutRatio, 0, 1, -0.3, 0) * fit(astronautDropRatio, 0, 0.15, 1, 0.2)
       brokenGlass.updateFromScroll({
-        whiteFrameBreakRatio: whiteFrameBreak,
+        // Exact Lusion: q = getRange("whiteFrameBreak","astronautDrop")
+        glassBreakRatio: astronautDropRatio,
         astronautDropRatio,
         frameHeight: frameH,
         frameRotation,
@@ -1088,29 +1114,37 @@ void main(){
       isWhiteTunnelActive && astronautDropRatio < 1 ? '#6a7f94' : '#566d80'
     )
 
-    // phase colors — Lusion clearAlpha:0 on black; white tunnel opaque white
+    // Phase colors — white through glass + wave wait; black only for title/tunnel
+    const inWhiteOutro = isWhiteTunnelActive || whiteTunnelWaitRatio > 0
     const bg = new THREE.Color(
-      isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
+      inWhiteOutro && (astronautDropRatio < 1 || whiteTunnelWaitRatio > 0)
+        ? '#ffffff'
+        : isBlackTunnelActive || isBlackTitleActive
+          ? '#000000'
+          : '#ffffff'
     )
+    // After glass: Lusion clears white→transparent so the waving astronaut sits on the page
+    if (isWhiteTunnelActive && astronautDropRatio >= 1) {
+      bg.set('#ffffff')
+    }
     bgMatPlane.uniforms.u_color.value.copy(bg)
     // Keep scene.background null so post RT preserves fragment alpha (bloom mask)
     scene.background = null
     renderer.setClearColor(bg, post.clearAlpha)
     sharedUniforms.u_bgColor.value.copy(bg)
     if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
-      stickyEl.style.background = bg.getStyle()
+      stickyEl.style.background =
+        astronautDropRatio >= 1 && whiteTunnelWaitRatio > 0.02
+          ? 'transparent'
+          : bg.getStyle()
     }
     // Page chrome: ONLY while the goal sticky is full-bleed pinned.
-    // blackTitleRatio is 0 (hence < 1) for the entire page BEFORE the goal
-    // section — treating that as "black title active" painted the hero black
-    // and hid the ZYRAX logo. Lusion only applies these clears inside the
-    // GoalTunnels stage, not globally.
     const windowed = stickyEl?.classList.contains('is-windowed')
     const pinned = stickyEl?.classList.contains('is-pinned')
     if (!pinned || windowed) {
       document.documentElement.style.background = ''
       document.body.style.background = ''
-    } else if (isWhiteTunnelActive && astronautDropRatio < 1) {
+    } else if (isWhiteTunnelActive || whiteTunnelWaitRatio > 0) {
       document.documentElement.style.background = '#ffffff'
       document.body.style.background = '#ffffff'
     } else if (isBlackTunnelActive || isBlackTitleActive) {
@@ -1142,7 +1176,7 @@ void main(){
       const pinned = stickyEl?.classList.contains('is-pinned')
       if (!pinned) {
         header.style.color = ''
-      } else if (isWhiteTunnelActive && astronautDropRatio < 1) {
+      } else if (isWhiteTunnelActive || whiteTunnelWaitRatio > 0) {
         header.style.color = '#000000'
       } else {
         header.style.color = '#ffffff'
@@ -1418,13 +1452,14 @@ void main(){
     prevWhiteRatio = whiteTunnelRatio
 
     const bgHex =
-      isWhiteTunnelActive && astronautDropRatio < 1 ? '#ffffff' : '#000000'
+      isWhiteTunnelActive || whiteTunnelWaitRatio > 0 ? '#ffffff' : '#000000'
     // Portrait camera.aspect (~0.46) blows sticker yLimit off-screen — clamp like a landscape frustum
     const extrasAspect = isMobile
       ? Math.max(camera.aspect, 0.95)
       : Math.max(camera.aspect, 0.01)
+    // Lusion wait finale: stickers/diamonds appear as astronautWait progresses
     whiteExtras.update({
-      whiteTunnelWaitRatio,
+      whiteTunnelWaitRatio: astronautDropRatio >= 1 ? whiteTunnelWaitRatio : 0,
       aspect: extrasAspect,
       bg: bgHex,
     })
@@ -1492,7 +1527,6 @@ void main(){
     if (drop < 0.5) {
       // Entry idle loop (frames 0–89)
       pauseLoopTime = 0
-      // Keep early title near the iconic arms-out frames (Lusion marketing pose)
       speed =
         blackTitleRatio < 0.08
           ? smoothstep(-0.3, 1, blackTitleRatio) * 0.25
@@ -1501,8 +1535,16 @@ void main(){
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
-      // Wave loop (frames 140–287) — frozen until drop≥0.9, then plays
-      speed = fit(drop, 0.9, 1, 0, 1)
+      // Wave loop (frames 140–287). Hold until late drop, then play through;
+      // after drop completes, loop forever on the white outro (Lusion wait).
+      if (pauseLoopTime === Number.POSITIVE_INFINITY && drop >= 1) {
+        pauseLoopTime = 0
+        animationTime = 0
+      }
+      speed =
+        drop >= 1
+          ? 1
+          : fit(drop, 0.88, 1, 0, 1)
       loopFrom = 140
       loopTo = Math.min(frameCount - 1, 287)
       const flicker = Math.min(
@@ -1514,6 +1556,7 @@ void main(){
         pauseLoopTime = Math.max(0, pauseLoopTime)
         allowWrap = false
       } else {
+        allowWrap = true
         pauseLoopTime = 0
       }
     }

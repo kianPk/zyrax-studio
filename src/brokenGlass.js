@@ -153,13 +153,19 @@ export async function createBrokenGlass(scene, { base }) {
   const _q = new THREE.Quaternion()
 
   const updateFromScroll = ({
+    glassBreakRatio = 0,
     whiteFrameBreakRatio = 0,
     astronautDropRatio = 0,
     frameHeight = 0,
     frameRotation = 0,
     frameScale = 1,
   } = {}) => {
-    ratio = fit(whiteFrameBreakRatio, 0, 1, 0, 1, easeSineOut)
+    // Lusion GoalSection: glass.ratio = fit(getRange(break, drop).ratio, …, sineOut)
+    const breakDrive =
+      glassBreakRatio > 0 || whiteFrameBreakRatio === 0
+        ? glassBreakRatio
+        : whiteFrameBreakRatio
+    ratio = fit(breakDrive, 0, 1, 0, 1, easeSineOut)
     fragmentScale = fit(astronautDropRatio, 0.75, 1, 1, 0)
     domFrameHeight = Math.max(1, frameHeight || window.innerHeight)
     domFrameRotation = frameRotation || 0
