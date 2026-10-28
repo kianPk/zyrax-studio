@@ -1,0 +1,82 @@
+[
+  {
+    "id": "zyrax_drive",
+    "title": "Zyrax Drive",
+    "tags": "web • three.js • r3f • interactive • 3d",
+    "url": "https://kianpk.github.io/zyrax-drive/",
+    "colorBg": "#0a0c12",
+    "colorText": "#e8ecff"
+  },
+  {
+    "id": "orbit_desk",
+    "title": "Orbit Desk",
+    "tags": "web • react • three.js • portfolio • 3d",
+    "url": "https://kianpk.github.io/orbit-desk/",
+    "colorBg": "#10131a",
+    "colorText": "#f0f3ff"
+  },
+  {
+    "id": "playfield",
+    "title": "Playfield",
+    "tags": "web • three.js • ammo.js • physics • 3d",
+    "url": "https://kianpk.github.io/playfield/",
+    "colorBg": "#0d1520",
+    "colorText": "#d9f0ff"
+  },
+  {
+    "id": "tradeforge",
+    "title": "TradeForge",
+    "tags": "web3 • solidity • foundry • defi",
+    "url": "https://kianpk.github.io/tradeforge/",
+    "colorBg": "#0b1210",
+    "colorText": "#c8ffd8"
+  },
+  {
+    "id": "velocity_arena",
+    "title": "Velocity Arena",
+    "tags": "web • vue • socket.io • multiplayer • game",
+    "url": "https://kianpk.github.io/velocity-arena/",
+    "colorBg": "#120a14",
+    "colorText": "#ffd6f0"
+  },
+  {
+    "id": "neon_serpent",
+    "title": "Neon Serpent",
+    "tags": "web • canvas • arcade • game",
+    "url": "https://kianpk.github.io/neon-serpent/",
+    "colorBg": "#060b12",
+    "colorText": "#9dffe8"
+  },
+  {
+    "id": "hexsweep",
+    "title": "Hexsweep",
+    "tags": "web • svg • puzzle • game",
+    "url": "https://kianpk.github.io/hexsweep/",
+    "colorBg": "#e8f2ee",
+    "colorText": "#0a3d32"
+  },
+  {
+    "id": "brickforge",
+    "title": "Brickforge",
+    "tags": "web • canvas • arcade • particles",
+    "url": "https://kianpk.github.io/brickforge/",
+    "colorBg": "#140c0a",
+    "colorText": "#ffe0d0"
+  },
+  {
+    "id": "zyrax_studio",
+    "title": "Zyrax Studio",
+    "tags": "web • three.js • scroll • immersive",
+    "url": "https://kianpk.github.io/zyrax-studio/",
+    "colorBg": "#0e1016",
+    "colorText": "#f0f1fa"
+  },
+  {
+    "id": "server_pulse",
+    "title": "Server Pulse",
+    "tags": "web • cs2 • realtime • dashboard",
+    "url": "https://kianpk.github.io/server-pulse/",
+    "colorBg": "#0a1014",
+    "colorText": "#cde8ff"
+  }
+]

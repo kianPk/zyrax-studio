@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.toml"
   },
   "dependencies": {
     "gsap": "^3.12.5",
@@ -15,6 +17,7 @@
   },
   "devDependencies": {
     "playwright": "^1.49.0",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "wrangler": "^3.99.0"
   }
 }

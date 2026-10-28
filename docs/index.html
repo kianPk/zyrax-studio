@@ -11,8 +11,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/zyrax-studio/assets/index-D6Rq2vn3.js"></script>
-  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-DoQIGbRc.css">
+  <script type="module" crossorigin src="/zyrax-studio/assets/index-BcvhjBUa.js"></script>
+  <link rel="modulepreload" crossorigin href="/zyrax-studio/assets/motion-BgQTtF5Z.js">
+  <link rel="stylesheet" crossorigin href="/zyrax-studio/assets/index-CZIRgUlz.css">
 </head>
 <body>
   <canvas id="canvas" aria-hidden="true"></canvas>
@@ -299,16 +300,20 @@
             </div>
             <div id="footer-middle-newsletter">
               <div id="footer-newsletter-header">
-                <span class="footer-newsletter-line">Stay in</span>
-                <span class="footer-newsletter-line">the loop</span>
+                <span class="footer-newsletter-line">Say</span>
+                <span class="footer-newsletter-line">hello</span>
               </div>
-              <div id="footer-newsletter-input">
+              <div id="footer-contact-form-wrap">
                 <div id="footer-newsletter-bg" aria-hidden="true"></div>
-                <form id="footer-newsletter-form" action="mailto:kianzarandi701@gmail.com">
-                  <input id="footer-newsletter-input-field" type="email" placeholder="Your email" required />
-                  <button id="footer-newsletter-input-arrow" type="submit" aria-label="Subscribe">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12h17M13 4.5 20.5 12 13 19.5"/></svg>
-                  </button>
+                <form id="footer-contact-form" novalidate>
+                  <input id="footer-contact-name" name="name" type="text" placeholder="Your name" autocomplete="name" required maxlength="80" />
+                  <input id="footer-contact-email" name="email" type="email" placeholder="Your email" autocomplete="email" required maxlength="120" />
+                  <textarea id="footer-contact-message" name="message" placeholder="Tell me about your project" required maxlength="2000" rows="3"></textarea>
+                  <div id="footer-contact-actions">
+                    <button id="footer-contact-submit" type="submit">Send message</button>
+                    <a id="footer-contact-telegram" href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">or Telegram</a>
+                  </div>
+                  <p id="footer-contact-status" role="status" aria-live="polite" hidden></p>
                 </form>
               </div>
             </div>

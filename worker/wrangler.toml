@@ -1,0 +1,9 @@
+name = "zyrax-studio-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# From repo root:
+#   npm run worker:dev
+#   npm run worker:deploy
+#   npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
+#   npx wrangler secret put TELEGRAM_CHAT_ID --config worker/wrangler.toml

@@ -1,20 +1,25 @@
 import Lenis from 'lenis'
 import gsap from 'gsap'
-import { projects } from './projects.js'
-import { createBalloonsHero } from './balloons.js'
-import { createGoalTunnel } from './tunnel.js'
+import { API_URL, loadProjects, sendContact, TELEGRAM_FALLBACK } from './api.js'
 import { bindGoalDomScroll } from './goalDom.js'
 import { bindLusionScrollText } from './scrollText.js'
 import { bindFeaturedProjects } from './featuredProjects.js'
-import { createFeaturedWebgl } from './featuredWebgl.js'
 import { bindReelScroll } from './reelScroll.js'
-import { createScrollLines } from './scrollLines.js'
 import { bindGoalFrame } from './goalFrame.js'
 import { createSiteAudio } from './audio.js'
 import { createGoalRanges } from './scrollRanges.js'
 
 const isMobile =
   /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
+
+// Preconnect Worker origin when configured (build-time VITE_API_URL)
+if (API_URL) {
+  const link = document.createElement('link')
+  link.rel = 'preconnect'
+  link.href = API_URL
+  link.crossOrigin = 'anonymous'
+  document.head.appendChild(link)
+}
 
 // Match Lusion --vh — use visualViewport on mobile so address-bar show/hide
 // doesn't leave 100vh gaps / clipped sticky tunnels.
@@ -23,8 +28,6 @@ const setVh = ({ notifyResize = false } = {}) => {
   const h = window.visualViewport?.height || window.innerHeight
   const next = h * 0.01
   document.documentElement.style.setProperty('--vh', `${next}px`)
-  // Only rebroadcast when the visible height actually changed (URL bar),
-  // and never from a window resize listener (would recurse).
   if (notifyResize && isMobile && Math.abs(h - lastVhPx) > 1) {
     lastVhPx = h
     window.dispatchEvent(new Event('resize'))
@@ -34,8 +37,6 @@ const setVh = ({ notifyResize = false } = {}) => {
 }
 setVh()
 window.addEventListener('resize', () => setVh())
-// Debounce visualViewport → --vh so 4200vh runway doesn't thrash every pixel.
-// Also re-pin sticky top/height when only offsetTop changes (URL bar).
 let vvVhTimer = 0
 let onVisualViewportSync = () => {}
 const onVisualViewport = () => {
@@ -49,12 +50,9 @@ const onVisualViewport = () => {
 window.visualViewport?.addEventListener('resize', onVisualViewport)
 window.visualViewport?.addEventListener('scroll', onVisualViewport)
 
-// Softer wheel than default Lenis — closer to Lusion ScrollPane (wheelEaseCoeff 12)
-// Mobile: shorter duration + native-ish touch to cut scroll jank vs multi-WebGL load
 const lenis = new Lenis({
   duration: isMobile ? 0.7 : 1.35,
   easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-  // Mobile: native touch scroll only — Lenis touch sync fought iOS and felt "buggy"
   smoothWheel: !isMobile,
   syncTouch: false,
   syncTouchLerp: 0,
@@ -83,11 +81,12 @@ window.addEventListener(
   { passive: true }
 )
 
-// Featured projects — exact Lusion lineup + assets, Zyrax brand chrome
 const assetBase = `${import.meta.env.BASE_URL}assets/projects/`
 const list = document.getElementById('project-list')
-if (list) {
-  list.innerHTML = projects
+
+function renderProjects(projectList) {
+  if (!list) return
+  list.innerHTML = projectList
     .map(
       (p) => `
     <a class="project-item project-type-website" href="${p.url}" rel="noreferrer"
@@ -116,7 +115,6 @@ const heroTitle = document.getElementById('home-hero-title')
 const heroVisual = document.getElementById('home-hero-visual-container')
 const heroScrollHint = document.getElementById('home-hero-scroll-container')
 
-// Goal DOM scroll first (title zoom works without WebGL)
 const goalSection = document.getElementById('home-goal')
 const goalCanvas = document.getElementById('goal-tunnel-canvas')
 const goalTitle = document.getElementById('home-goal-tunnel-title')
@@ -127,13 +125,11 @@ const siteAudio = createSiteAudio()
 let goalTunnel = null
 let lastGoalPhase = ''
 
-// Lusion continuous scroll-time text (Bold Ideas / Featured / etc.)
 const scrollText = bindLusionScrollText()
-const featuredProjects = bindFeaturedProjects()
+let featuredProjects = { update() {} }
 const reelScroll = bindReelScroll()
 let scrollLines = null
 let featuredWebgl = null
-// goalFrame needs scrollLines for cyan-arc expand — bind with a live getter
 const goalFrame = goalSection
   ? bindGoalFrame(goalSection, goalSticky, goalRanges, {
       setGoalFrame: (...args) => scrollLines?.setGoalFrame?.(...args),
@@ -152,8 +148,6 @@ gsap.ticker.add((time) => {
   const dt = Math.min(0.05, (now - lastTick) / 1000)
   lastTick = now
 
-  // Lusion GoalTunnels autoScroll — desktop only. Wait for Lenis coast to finish
-  // before nudging, or immediate scrollTo teleports into the astronaut.
   if (!isMobile) {
     if (goalTunnel?.getAutoScrollSpeed) {
       goalAutoScrollSpeed = goalTunnel.getAutoScrollSpeed()
@@ -179,7 +173,6 @@ gsap.ticker.add((time) => {
   featuredProjects.update(dt)
   featuredWebgl?.update(dt)
   reelScroll.update(dt)
-  // Single lines update per frame (was also on scroll → double WebGL submit = mobile lag)
   scrollLines?.update()
   goalTunnel?.tickFrame?.(dt)
   siteAudio.update(dt)
@@ -187,12 +180,10 @@ gsap.ticker.add((time) => {
   if (phase && phase !== lastGoalPhase) {
     lastGoalPhase = phase
     siteAudio.syncGoalPhase(phase)
-    // Free the lines GPU while the astronaut tunnel owns the screen
     scrollLines?.setPaused?.(
       isMobile && (phase === 'black-tunnel' || phase === 'white')
     )
   }
-  // Exact Lusion HomePageAudios — real GoalTunnels ratios every frame
   if (goalTunnel?.getAstronautDropRatio) {
     siteAudio.syncTunnelAudio({
       blackFrameInRatio: goalTunnel.getBlackFrameInRatio?.() ?? 0,
@@ -205,7 +196,6 @@ gsap.ticker.add((time) => {
 gsap.ticker.lagSmoothing(0)
 
 lenis.on('scroll', () => {
-  // Frame first so window→full handoff pins before goalDom reads classes
   goalFrame.update()
   goalDom.updateScroll()
   goalTunnel?.updateScroll()
@@ -227,23 +217,42 @@ lenis.on('scroll', () => {
   }
 })
 
-// Boot WebGL: scroll lines + goal tunnel, then balloons
-// Mobile still gets lines (signature look) but at DPR 1 inside scrollLines.js
-createScrollLines()
+/** Boot a WebGL module once when `el` is near the viewport */
+function whenNearViewport(el, boot, { rootMargin = '40% 0px' } = {}) {
+  if (!el) {
+    boot()
+    return
+  }
+  let done = false
+  const run = () => {
+    if (done) return
+    done = true
+    obs?.disconnect()
+    boot()
+  }
+  if (typeof IntersectionObserver === 'undefined') {
+    run()
+    return
+  }
+  const obs = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) run()
+    },
+    { root: null, rootMargin, threshold: 0 }
+  )
+  obs.observe(el)
+}
+
+// Scroll lines first (signature look) — dynamic import, then balloons
+import('./scrollLines.js')
+  .then(({ createScrollLines }) => createScrollLines())
   .then((api) => {
     scrollLines = api
   })
   .catch((err) => console.error('Scroll lines failed', err))
-
-createGoalTunnel(goalCanvas, goalSection, goalTitle)
-  .then((api) => {
-    goalTunnel = api
-  })
-  .catch((err) => {
-    console.error('Goal tunnel failed', err)
-  })
   .finally(() => {
-    createBalloonsHero(heroCanvas, visual)
+    import('./balloons.js')
+      .then(({ createBalloonsHero }) => createBalloonsHero(heroCanvas, visual))
       .then(() => homeHero?.classList.add('is-in'))
       .catch((err) => {
         console.error('Balloons hero failed', err)
@@ -251,18 +260,38 @@ createGoalTunnel(goalCanvas, goalSection, goalTitle)
       })
   })
 
-// Lusion ProjectItem UfxMesh — skip on mobile (extra WebGL context = lag)
-if (!isMobile) {
-  createFeaturedWebgl(projects)
+// Goal tunnel — only when the section approaches the viewport
+whenNearViewport(goalSection, () => {
+  import('./tunnel.js')
+    .then(({ createGoalTunnel }) => createGoalTunnel(goalCanvas, goalSection, goalTitle))
     .then((api) => {
-      featuredWebgl = api
+      goalTunnel = api
     })
-    .catch((err) => console.error('Featured WebGL failed', err))
-}
+    .catch((err) => console.error('Goal tunnel failed', err))
+}, { rootMargin: '60% 0px' })
+
+// Featured list: API → static fallback, then bind + deferred WebGL
+loadProjects().then((projectList) => {
+  renderProjects(projectList)
+  featuredProjects = bindFeaturedProjects()
+
+  if (isMobile) return
+  const featuredSection =
+    document.getElementById('home-featured') ||
+    document.querySelector('.project-list') ||
+    list
+  whenNearViewport(featuredSection, () => {
+    import('./featuredWebgl.js')
+      .then(({ createFeaturedWebgl }) => createFeaturedWebgl(projectList))
+      .then((api) => {
+        featuredWebgl = api
+      })
+      .catch((err) => console.error('Featured WebGL failed', err))
+  }, { rootMargin: '50% 0px' })
+})
 
 function splitWords(el, className = 'word') {
   if (!el) return
-  // Preserve marked name spans (e.g. .hero-name) before flattening text
   const nameNodes = Array.from(el.querySelectorAll('.hero-name')).map((n) =>
     n.textContent.trim()
   )
@@ -287,13 +316,11 @@ requestAnimationFrame(() => {
   document.getElementById('home-hero-title')?.classList.add('is-in')
 })
 
-// Scroll crosses reveal timing
 const crosses = document.querySelectorAll('.home-hero-scroll-container-cross')
 crosses.forEach((c, i) => {
   c.style.transitionDelay = `${0.15 + i * 0.08}s`
 })
 
-// Lusion Header._enableMenu — dropdown panel + MENU↔CLOSE + dots rotate
 const headerEl = document.getElementById('header')
 const headerContainer = document.getElementById('header-container')
 const headerBackground = document.getElementById('header-background')
@@ -362,4 +389,45 @@ document.querySelector('#end-bottom')?.addEventListener('click', (e) => {
 document.querySelector('#footer-bottom-up')?.addEventListener('click', (e) => {
   e.preventDefault()
   lenis.scrollTo(0)
+})
+
+// Contact form → Worker / Telegram fallback
+const contactForm = document.getElementById('footer-contact-form')
+const contactStatus = document.getElementById('footer-contact-status')
+const contactSubmit = document.getElementById('footer-contact-submit')
+const contactTelegram = document.getElementById('footer-contact-telegram')
+if (contactTelegram) contactTelegram.href = TELEGRAM_FALLBACK
+
+function setContactStatus(text, kind) {
+  if (!contactStatus) return
+  contactStatus.hidden = !text
+  contactStatus.textContent = text || ''
+  contactStatus.classList.toggle('is-ok', kind === 'ok')
+  contactStatus.classList.toggle('is-err', kind === 'err')
+}
+
+contactForm?.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const name = document.getElementById('footer-contact-name')?.value?.trim() || ''
+  const email = document.getElementById('footer-contact-email')?.value?.trim() || ''
+  const message = document.getElementById('footer-contact-message')?.value?.trim() || ''
+  if (!name || !email || !message) {
+    setContactStatus('Please fill in all fields.', 'err')
+    return
+  }
+  if (contactSubmit) contactSubmit.disabled = true
+  setContactStatus('Sending…', null)
+  const result = await sendContact({ name, email, message })
+  if (contactSubmit) contactSubmit.disabled = false
+  if (result.ok) {
+    contactForm.reset()
+    setContactStatus('Sent — I’ll get back to you soon.', 'ok')
+    return
+  }
+  const fallback = result.fallback || TELEGRAM_FALLBACK
+  if (contactTelegram) contactTelegram.href = fallback
+  setContactStatus(
+    `Couldn’t reach the server. Message me on Telegram instead.`,
+    'err'
+  )
 })

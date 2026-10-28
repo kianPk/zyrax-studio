@@ -3,6 +3,9 @@ node_modules
 dist
 *.local
 .vite
+.env
+.wrangler
+.wrangler-dist
 tmp_*
 tmp_banners/
 tmp_lusion/
