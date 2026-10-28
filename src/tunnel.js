@@ -1823,6 +1823,16 @@ void main(){
     getGlassRatio: () => brokenGlass?.ratio ?? 0,
     getAstronautDropRatio: () => astronautDropRatio,
     getWhiteTunnelRatio: () => whiteTunnelRatio,
+    getBlackFrameInRatio: () => blackFrameInRatio,
+    getBlackTunnelRatio: () => blackTunnelRatio,
+    getBlackTitleRatio: () => blackTitleRatio,
+    isGoalAudioActive: () =>
+      !!(
+        stickyEl &&
+        (stickyEl.classList.contains('is-pinned') ||
+          stickyEl.classList.contains('is-windowed') ||
+          (active && (isBlackTitleActive || isBlackTunnelActive || isWhiteTunnelActive)))
+      ),
     destroy() {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)

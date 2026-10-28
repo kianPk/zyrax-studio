@@ -190,12 +190,13 @@ gsap.ticker.add((time) => {
       isMobile && (phase === 'black-tunnel' || phase === 'white')
     )
   }
+  // Exact Lusion HomePageAudios — real GoalTunnels ratios every frame
   if (goalTunnel?.getAstronautDropRatio) {
     siteAudio.syncTunnelAudio({
-      blackFrameInRatio: phase === 'window' ? 0 : 1,
-      blackTunnelRatio: phase === 'black-tunnel' ? 1 : 0,
+      blackFrameInRatio: goalTunnel.getBlackFrameInRatio?.() ?? 0,
+      blackTunnelRatio: goalTunnel.getBlackTunnelRatio?.() ?? 0,
       whiteTunnelRatio: goalTunnel.getWhiteTunnelRatio?.() ?? 0,
-      astronautDropRatio: goalTunnel.getAstronautDropRatio() ?? 0,
+      astronautDropRatio: goalTunnel.getAstronautDropRatio?.() ?? 0,
     })
   }
 })
@@ -206,12 +207,6 @@ lenis.on('scroll', () => {
   goalFrame.update()
   goalDom.updateScroll()
   goalTunnel?.updateScroll()
-  if (goalTunnel?.getAstronautDropRatio) {
-    siteAudio.syncTunnelAudio({
-      whiteTunnelRatio: goalTunnel.getWhiteTunnelRatio?.() ?? 0,
-      astronautDropRatio: goalTunnel.getAstronautDropRatio() ?? 0,
-    })
-  }
   if (!homeHero) return
   const rect = homeHero.getBoundingClientRect()
   const vh = window.innerHeight

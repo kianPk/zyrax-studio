@@ -1,5 +1,6 @@
 /**
  * Lusion-style site audio — music beds + UI SFX.
+ * Music cues match HomePageAudios.update from lusion.co.
  * Always on: unlocks on first user gesture, no mute toggle.
  */
 const BASE = `${import.meta.env.BASE_URL}assets/audios/`
@@ -39,15 +40,16 @@ export function createSiteAudio() {
     sfx[id] = files.map((f) => makeAudio(`${BASE}${f}`, { loop: false, volume: 0.85 }))
   }
 
-  // Always enabled — only browser autoplay policy can delay the first unlock
-  const enabled = true
   let unlocked = false
   let currMusicId = null
   let fadeFrom = null
   let fadeTo = null
   let fadeT = 1
   let fadeDur = 1.2
+  /** Outside goal section — hero / reel / featured */
+  let outsideGoal = true
   const sfxIdx = { hover: 0, click: 0, focus: 0, page: 0, glass: 0 }
+  let brokenGlassStep = 0
 
   const unlock = async () => {
     if (unlocked) return
@@ -58,14 +60,14 @@ export function createSiteAudio() {
       await probe.play()
       probe.pause()
       probe.currentTime = 0
-      if (!currMusicId) fadeToMusic('generic', 0.8)
+      if (!currMusicId) fadeToMusic('generic', 0.01)
     } catch {
       unlocked = false
     }
   }
 
   const playSfx = (kind) => {
-    if (!enabled || !unlocked) return
+    if (!unlocked) return
     const list = sfx[kind]
     if (!list?.length) return
     const i = sfxIdx[kind] % list.length
@@ -76,6 +78,7 @@ export function createSiteAudio() {
   }
 
   const fadeToMusic = (id, dur = 1.2) => {
+    // Match Lusion Audios.fadeBgMusic: only act when id changes
     if (!music[id] || currMusicId === id) return
     fadeFrom = currMusicId
     fadeTo = id
@@ -83,7 +86,12 @@ export function createSiteAudio() {
     fadeDur = Math.max(0.05, dur)
     currMusicId = id
     const next = music[id]
-    next.volume = 0
+    // Crossfade from current playback position (looping beds) — no seek reset
+    if (next.volume > 0.01 && !next.paused) {
+      // already audible somehow — keep going
+    } else {
+      next.volume = 0
+    }
     if (unlocked) next.play().catch(() => {})
   }
 
@@ -93,10 +101,14 @@ export function createSiteAudio() {
       fadeT = Math.min(1, fadeT + dt / fadeDur)
       const t = fadeT * fadeT * (3 - 2 * fadeT)
       if (fadeFrom && music[fadeFrom]) {
-        music[fadeFrom].volume = 1 - t
+        music[fadeFrom].volume = Math.max(0, 1 - t)
         if (t >= 1) {
           music[fadeFrom].pause()
-          music[fadeFrom].currentTime = 0
+          try {
+            music[fadeFrom].currentTime = 0
+          } catch {
+            /* ignore */
+          }
         }
       }
       if (music[fadeTo]) {
@@ -108,41 +120,53 @@ export function createSiteAudio() {
         fadeTo = null
       }
     } else if (currMusicId && music[currMusicId]) {
-      music[currMusicId].volume = 1
+      if (music[currMusicId].volume < 1) music[currMusicId].volume = 1
       if (music[currMusicId].paused) music[currMusicId].play().catch(() => {})
     }
   }
 
-  let brokenGlassStep = 0
+  /**
+   * Phase hook kept for main.js; music is owned solely by syncTunnelAudio.
+   */
+  const syncGoalPhase = () => {}
 
-  const syncGoalPhase = (phase) => {
-    if (!enabled) return
-    if (phase === 'window') fadeToMusic('generic', 1.0)
-    else if (phase === 'title' || phase === 'black-tunnel') fadeToMusic('cinematic_0', 1.4)
-    else if (phase === 'white') fadeToMusic('cinematic_3', 1.6)
-    else fadeToMusic('generic', 1.2)
-  }
-
+  /**
+   * Exact port of Lusion HomePageAudios.update music + glass SFX cues.
+   * Ratios must be the live GoalTunnels values (not phase booleans).
+   */
   const syncTunnelAudio = ({
     blackFrameInRatio = 0,
     blackTunnelRatio = 0,
     whiteTunnelRatio = 0,
     astronautDropRatio = 0,
   } = {}) => {
-    if (!enabled) return
-    if (blackFrameInRatio > 0.5 && blackTunnelRatio === 0) {
+    outsideGoal = false
+
+    const e = astronautDropRatio
+    const t = blackFrameInRatio
+    const r = blackTunnelRatio
+    const n = whiteTunnelRatio
+
+    // Nested ternary from Lusion HomePageAudios — track ids + fade times exact
+    if (t > 0.5 && r === 0) {
       brokenGlassStep = 0
-      fadeToMusic('cinematic_0', 0.8)
-    } else if (blackTunnelRatio > 0 && whiteTunnelRatio === 0) {
+      fadeToMusic('cinematic_2', 0.5)
+    } else if (r > 0 && n === 0) {
+      fadeToMusic('cinematic_3', 0.5)
       brokenGlassStep = 0
-      fadeToMusic('cinematic_0', 0.8)
-    } else if (whiteTunnelRatio > 0 && astronautDropRatio <= 0.8) {
-      fadeToMusic('cinematic_3', 0.8)
-    } else if (whiteTunnelRatio > 0 && astronautDropRatio > 0.8) {
-      fadeToMusic('generic_end', 1.0)
+    } else if (n > 0 && e === 0) {
+      fadeToMusic('cinematic_2', 0.5)
+    } else if (n > 0 && e <= 0.8) {
+      fadeToMusic('cinematic_2', 0.5)
+    } else if (n > 0 && e > 0.8) {
+      fadeToMusic('generic_end', 1)
+    } else {
+      brokenGlassStep = 0
+      fadeToMusic('generic', 1)
     }
 
-    if (astronautDropRatio === 0) {
+    // Glass SFX: arm while drop==0, fire once on first frame drop>0
+    if (e === 0) {
       brokenGlassStep = 1
     } else if (brokenGlassStep === 1) {
       playSfx('glass')
@@ -161,9 +185,9 @@ export function createSiteAudio() {
     unlock()
   }
   window.addEventListener('pointerdown', onceUnlock, { passive: true })
+  window.addEventListener('touchstart', onceUnlock, { passive: true })
   window.addEventListener('wheel', onceUnlock, { passive: true, once: true })
   window.addEventListener('keydown', onceUnlock, { passive: true, once: true })
-  // Try immediate unlock (works when autoplay policy allows)
   unlock()
 
   return {
@@ -173,7 +197,7 @@ export function createSiteAudio() {
     playSfx,
     setEnabled() {},
     get enabled() {
-      return enabled
+      return true
     },
     destroy() {
       Object.values(music).forEach((a) => {
