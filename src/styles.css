@@ -1122,13 +1122,12 @@ button {
   background: #000;
 }
 #home-goal-image-out-outer {
-  /* Collapsed in layout — scrollRanges recovers intrinsic height for
-     astronautDrop pixels. Full-viewport window overlay covers any gap. */
+  /* Keep in flow like Lusion — real height drives glass pane scale + drop pixels.
+     (Collapsing to 0 made shatter oversized/undersized and starved the wave.) */
   position: relative;
   grid-column: 2 / 12;
   pointer-events: none;
-  height: 0;
-  overflow: hidden;
+  visibility: hidden;
 }
 #home-goal-image-out-inner {
   position: relative;

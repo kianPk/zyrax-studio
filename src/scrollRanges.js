@@ -120,9 +120,9 @@ export function createGoalRanges(sectionEl) {
     baseY = (imgIn.top || section.top) - vh
 
     const showPx = (vh + inH) * 0.5
-    // Glass punch-through — keep drop shorter so wait (wave loop) starts
-    // while the sticky is still pinned (Lusion-style readable outro).
-    const dropPx = Math.max((vh + outH) * 0.45 + vh * 0.65, vh * 1.25)
+    // Exact Lusion: astronautDrop.pixelCount = (vh + outH) * 0.5 + vh
+    // Shorter local drop starved glass shatter + wave intro.
+    const dropPx = Math.max((vh + outH) * 0.5 + vh, vh * 1.85)
 
     // Wait = wave + stickers while pinned, then end-section/footer
     const footer =

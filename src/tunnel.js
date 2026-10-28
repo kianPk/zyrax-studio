@@ -1107,10 +1107,11 @@ void main(){
     whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
     whiteTunnelAstronautOutRatio = ranges.between('whiteFrameBreak', 'astronautWait').ratio
     // Lusion GoalTunnelAstronauts extras — pan while dropping / waving.
-    // Use extras only (cameraViewportOffset g/v is handled by our sticky overlay).
-    // Clamp Y so headless/short wait ranges don't throw the hero off-frame.
+    // Soft-cap Y and ease pan back during wait so the hand-wave stays on screen
+    // (raw Lusion -ce grew through wait and could push the hero off-frame).
     {
       const dropPx = ranges.range('astronautDrop')
+      const waitPx = ranges.range('astronautWait')
       const ce = Math.max(0, dropPx.pixel || 0)
       dropScrollPx = ce
       const vwPx = window.innerWidth || 1
@@ -1130,12 +1131,14 @@ void main(){
         centerDelta,
         easeCubicInOut
       )
-      // -ce through drop+wait; ease in and soft-cap so the wave stays readable
       const rawY = -ce
-      const maxPan = vhLocal * 0.55
-      camViewOffsetY =
+      const maxPan = vhLocal * (isMobile ? 0.28 : 0.4)
+      const dropPan =
         fit(astronautDropRatio, 0.35, 1, 0, 1) *
         THREE.MathUtils.clamp(rawY, -maxPan, maxPan)
+      // Settle toward center as wait progresses so the wave reads clearly
+      const waitSettle = fit(waitPx?.ratio ?? 0, 0, 0.35, 0, 1)
+      camViewOffsetY = dropPan * (1 - waitSettle * 0.85)
     }
 
     isBlackTitleActive = blackTitleRatio < 1
@@ -1182,20 +1185,24 @@ void main(){
           window.innerWidth * 0.7
         frameH = w * (1537 / 2000)
       }
-      // Lusion: mix(1, diagonal/minSide, whiteFrameOut) while framed
+      // Exact Lusion GoalSection (after black tunnel):
+      // E = fit(offsetY, whiteFrameOut.from, whiteFrameOut.to, 1, 0)
+      //   → 1 before/at start of whiteFrameOut, 0 after it ends
+      // p = mix(1, diagonal/minSide, E)
+      // During glass break (past whiteFrameOut) E=0 → scale≈1 (out-frame size).
+      // We had this inverted (expanding with whiteFrameOut) so shards filled the
+      // whole screen instead of punching through the framed pane.
       const diag = Math.hypot(window.innerWidth, vh)
       const minSide = Math.min(
         outRect?.width > 8 ? outRect.width : frameH * (2000 / 1537),
         frameH
       )
-      const frameScale = THREE.MathUtils.lerp(
-        1,
-        diag / Math.max(minSide, 1),
-        clamp(whiteFrameOutRatio, 0, 1)
-      )
-      const frameRotation = fit(whiteFrameOutRatio, 0, 1, -0.3, 0) * fit(astronautDropRatio, 0, 0.15, 1, 0.2)
+      const E = 1 - clamp(whiteFrameOutRatio, 0, 1)
+      const frameScale = THREE.MathUtils.lerp(1, diag / Math.max(minSide, 1), E)
+      // Lusion: f = E * -0.3 during white out; damp as drop starts
+      const frameRotation = -0.3 * E * fit(astronautDropRatio, 0, 0.15, 1, 0.2)
       brokenGlass.updateFromScroll({
-        // Exact Lusion: q = getRange("whiteFrameBreak","astronautDrop")
+        // Exact Lusion: glass.ratio = fit(getRange(break, drop), 0, 1, 0, 1, sineOut)
         glassBreakRatio: astronautDropRatio,
         astronautDropRatio,
         frameHeight: frameH,
@@ -1624,11 +1631,18 @@ void main(){
 
     // bone loop — exact Lusion GoalTunnelAstronauts.updateAnimation
     const drop = astronautDropRatio
+    // u_loopLinearBlend: 0 = play loop (idle/wave), 1 = play linear punch (90–139)
     const loopLinearBlend =
       fit(drop, 0, 0.1, 0, 1) * fit(drop, 0.9, 1, 1, 0)
     sharedUniforms.u_loopLinearBlend.value = loopLinearBlend
     const cardFade = fit(drop, 0.9, 1, 0, 1, easeCubicIn)
     isCardActive = cardFade > 0
+
+    // Kick the wave loop the moment drop completes (Lusion pauseLoopTime = 0)
+    if (drop >= 1 && pauseLoopTime === Number.POSITIVE_INFINITY) {
+      pauseLoopTime = 0
+      animationTime = 0
+    }
 
     let speed
     let loopFrom
@@ -1642,15 +1656,11 @@ void main(){
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
-      // Wave loop (frames 140–287). Hold until late drop, then loop on wait.
-      if (pauseLoopTime === Number.POSITIVE_INFINITY && drop >= 1) {
-        pauseLoopTime = 0
-        animationTime = 0
-      }
-      // Exact Lusion: speed = fit(drop, 0.9, 1, 0, 1) → 1.0 when drop≥1
+      // Wave loop frames 140–287. Speed 0 until drop≈0.9 (linear punch shows),
+      // then ramps; full loop forever once drop≥1 (astronautWait).
       speed = fit(drop, 0.9, 1, 0, 1)
       loopFrom = 140
-      loopTo = Math.min(frameCount - 1, 287)
+      loopTo = Math.min(Math.max(140, frameCount - 1), 287)
       const flicker = Math.min(
         2,
         Math.max(0, 0.5 + Math.max(0, cardNoise.getFbm(tunnelTime * 8, 3) + 0.5) * 4)
@@ -1665,32 +1675,33 @@ void main(){
       }
     }
 
-    // Lusion order: advance clock first, THEN hard-reset while linear blend is fully on
+    // Exact Lusion order: advance clock first, THEN hard-reset while linear blend is on
     if (pauseLoopTime === 0) {
       animationTime += tunnelDeltaTime * speed * deltaTimeMultiplier
     }
     if (loopLinearBlend === 1) animationTime = 0
 
-    const span = loopTo - loopFrom + 1
+    const span = Math.max(1, loopTo - loopFrom + 1)
     const heroShift = partTimeShifts[0]
+    // Lusion: T===0 uses timeShift as-is (cloneTimeShift = -1 sentinel)
     const heroW = heroShift + animationTime
-    let heroE = (heroW * 60) % span
+    let heroE = ((heroW * 60) % span + span) % span
     let heroI = Math.floor(heroE)
     let heroF = ((heroI + 1) % span) + loopFrom
     heroI += loopFrom
     if (heroF < heroI) {
       if (!allowWrap) {
-        // Freeze on first wave frame (the clear "hand wave" hold)
+        // Freeze on first wave frame until drop finishes (Lusion hold)
         heroF = heroI = loopFrom
         animationTime = -heroShift
         pauseLoopTime = Number.POSITIVE_INFINITY
       }
     }
-    const heroBlend = heroE - Math.floor(heroE)
-    blend1.setXYZ(0, heroI, heroF, allowWrap || heroF >= heroI ? heroBlend : 0)
+    const heroBlend = heroF < heroI && !allowWrap ? 0 : heroE - Math.floor(heroE)
+    blend1.setXYZ(0, heroI, heroF, heroBlend)
     blend1.needsUpdate = true
 
-    // Linear track blend — uses whiteFrameOutRatio + drop (NOT whiteTunnelRatio)
+    // Linear punch track — exact Lusion: fit(whiteFrameOut+drop, .9, 2, 90, 139, quartIn)
     const linearFrame = fit(
       whiteFrameOutRatio + drop,
       0.9,

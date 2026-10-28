@@ -154,36 +154,35 @@ export async function createBrokenGlass(scene, { base }) {
 
   const updateFromScroll = ({
     glassBreakRatio = 0,
-    whiteFrameBreakRatio = 0,
     astronautDropRatio = 0,
     frameHeight = 0,
     frameRotation = 0,
     frameScale = 1,
   } = {}) => {
-    // Lusion GoalSection: glass.ratio = fit(getRange(break, drop).ratio, …, sineOut)
-    const breakDrive =
-      glassBreakRatio > 0 || whiteFrameBreakRatio === 0
-        ? glassBreakRatio
-        : whiteFrameBreakRatio
-    ratio = fit(breakDrive, 0, 1, 0, 1, easeSineOut)
+    // Exact Lusion GoalSection: glass.ratio = fit(q.ratio, 0, 1, 0, 1, sineOut)
+    // where q = getRange("whiteFrameBreak", "astronautDrop")
+    ratio = fit(glassBreakRatio, 0, 1, 0, 1, easeSineOut)
+    // Exact Lusion GoalTunnels.updateRatios
     fragmentScale = fit(astronautDropRatio, 0.75, 1, 1, 0)
     domFrameHeight = Math.max(1, frameHeight || window.innerHeight)
     domFrameRotation = frameRotation || 0
-    domFrameScale = frameScale || 1
-    active = ratio > 0.001 && astronautDropRatio < 1
+    domFrameScale = Math.max(1e-4, frameScale || 1)
+    // Lusion: container visible through white/out, mesh only when ratio > 0
+    active = ratio > 0 && astronautDropRatio < 1
     container.visible = active
     if (!active) mesh.visible = false
   }
 
   /** Position glass as a camera-facing pane (Lusion EndCameraDepthToFrame=2). */
   const syncToCamera = (camera, viewportH = window.innerHeight) => {
-    if (!active || !camera) {
+    if (!active || !camera || ratio <= 0) {
       mesh.visible = false
       return false
     }
     mesh.position.copy(camera.position)
     mesh.quaternion.copy(camera.quaternion)
     mesh.translateZ(-END_CAMERA_DEPTH)
+    // Exact Lusion: n = (domFrameHeight/viewportH) * worldH * domFrameScale
     const worldH = Math.tan((camera.fov * Math.PI) / 360) * END_CAMERA_DEPTH * 2
     const n = (domFrameHeight / Math.max(viewportH, 1)) * worldH * domFrameScale
     _q.setFromAxisAngle(_axis, -domFrameRotation)
