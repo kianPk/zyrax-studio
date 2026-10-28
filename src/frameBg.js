@@ -220,14 +220,16 @@ export async function createFrameBg({ base }) {
         D = 0.8
         ne.copy(_black)
       } else {
-        F = -0.5
-        k = fit(oe, 0, 0.15, 0, 0.8)
-        k = fit(oe, 0.15, 0.3, k, 2)
-        L = fit(oe, 0, 0.1, 0.3, 1)
-        L = fit(oe, 0.1, 1, L, 0.2)
-        D = 0.5
+        // Lusion uses F=-.5 / k→2 / D=.5 — with our post bloom that rim
+        // blows the shatter white. Keep the blue cue but softer.
+        F = -0.25
+        k = fit(oe, 0, 0.15, 0, 0.45)
+        k = fit(oe, 0.15, 0.3, k, 1.0)
+        L = fit(oe, 0, 0.1, 0.35, 0.85)
+        L = fit(oe, 0.1, 1, L, 0.35)
+        D = 0.28
         let ee = fit(oe, 0, 0.1, 1, 0)
-        ee = fit(oe, 0.1, 0.8, ee, 0.85)
+        ee = fit(oe, 0.1, 0.8, ee, 0.9)
         ne.copy(_blue).lerp(_tmp.copy(_black), ee)
       }
       uniforms.u_dom2Texture.value = desktopTex?.image?.width ? desktopTex : blackTex

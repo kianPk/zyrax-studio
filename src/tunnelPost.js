@@ -401,16 +401,17 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
 
     whiteTunnelBloom = !!isWhiteTunnelActive
     if (isWhiteTunnelActive) {
-      // Exact Lusion syncProperties — NO extra glass bloom (that washed the shatter white)
-      // drop < 1: fit(whiteFrameRatio, 0, .05, 4, 2)
-      // drop ≥ 1: fit(whiteTunnelWaitRatio, 0, .1, 0, 20)
-      // haloStrength = 0 for entire white tunnel
-      const waitBloomPeak = isMobile ? 12 : 20
+      // Lusion base: drop<1 fit(whiteFrameRatio,0,.05,4,2); wait fit(0,.1,0,20)
+      // During glass punch our gaussian bloom + white clear wash harder than
+      // Lusion's FFT kernel — damp while shards are on screen so the suit reads.
+      const onGlass =
+        astronautDropRatio > 0.001 && astronautDropRatio < 1
+      const waitBloomPeak = isMobile ? 10 : 16
       bloomAmount =
         astronautDropRatio < 1
           ? THREE.MathUtils.lerp(
-              4,
-              2,
+              onGlass ? 1.6 : 4,
+              onGlass ? 1.1 : 2,
               THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1)
             )
           : THREE.MathUtils.lerp(
@@ -418,13 +419,14 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
               waitBloomPeak,
               THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
             )
-      bloomRadius = isMobile ? 0.4 : 0.5
-      highPassMultiplier = isMobile ? 1.1 : 1.2
-      whiteBloomDamp = isMobile ? 1.05 : 1.15
+      bloomRadius = onGlass ? (isMobile ? 0.28 : 0.35) : isMobile ? 0.4 : 0.5
+      highPassMultiplier = onGlass ? 1 : isMobile ? 1.1 : 1.2
+      whiteBloomDamp = onGlass ? 0.45 : isMobile ? 0.95 : 1.05
       hs = 0
-      // Exact Lusion: fit(whiteTunnelWaitRatio, 0, .1, .3, 0)
+      // Keep clear softer during glass so refraction isn't blown white
+      const clearStart = onGlass ? 0.12 : 0.3
       clearAlpha = THREE.MathUtils.lerp(
-        0.3,
+        clearStart,
         0,
         THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
       )

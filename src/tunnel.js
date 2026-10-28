@@ -1136,15 +1136,18 @@ void main(){
     // Exact Lusion astronaut-only extras during out/drop (NOT main camera):
     //   extraCameraViewportOffsetX = -fit(q.ratio,0,1,0,-center,cubicInOut)
     //   extraCameraViewportOffsetY = -ce
-    // Cap ce at drop length so wait scroll doesn't keep shoving the wave off-frame.
+    // Soft-cap drop pan so the wave stays readable (raw -ce can shove ~2×vh).
     {
       const dropPx = ranges.range('astronautDrop')
+      const vhLocal = window.innerHeight || 1
       const ceRaw = Math.max(0, dropPx.pixel || 0)
-      const ceMax = Math.max(1, dropPx.pixelCount || ceRaw)
+      const ceMax = Math.min(
+        Math.max(1, dropPx.pixelCount || ceRaw),
+        vhLocal * (isMobile ? 0.32 : 0.42)
+      )
       const ce = Math.min(ceRaw, ceMax)
       dropScrollPx = ce
       const vwPx = window.innerWidth || 1
-      // Prefer sticky/clip center while pinned — out DOM is often off-screen
       const host =
         stickyEl?.querySelector?.('[data-goal-screen-clip]') ||
         stickyEl ||
@@ -1161,7 +1164,8 @@ void main(){
         centerDelta,
         easeCubicInOut
       )
-      astroExtraOffsetY = -ce
+      astroExtraOffsetY =
+        -ce * fit(astronautDropRatio, 0.15, 0.85, 0, 1)
       frameCamOffsetX = 0
       frameCamOffsetY = 0
     }
@@ -1561,9 +1565,9 @@ void main(){
       : 0
     blackAstroUniforms.u_offsetZ.value = blackUniforms.u_offsetZ.value
 
-    // tint near drop (Lusion white tint)
+    // Lusion white tint — soften peak so glass shatter doesn't go cobalt-white
     const tintStrength =
-      fit(astronautDropRatio, 1, 0, 0.2, 1) * (whiteFrameBreak > 0 ? 1 : 0)
+      fit(astronautDropRatio, 1, 0, 0.15, 0.55) * (whiteFrameBreak > 0 ? 1 : 0)
     sharedUniforms.u_tintColor.value.setStyle('#2533c2').multiplyScalar(tintStrength)
 
     const stickyRect = stickyEl.getBoundingClientRect()
@@ -1787,10 +1791,10 @@ void main(){
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
-      // Exact Lusion: wave frames 140–287
+      // Exact Lusion: wave frames 140–287 (buf has 288 frames)
       speed = fit(drop, 0.9, 1, 0, 1)
       loopFrom = 140
-      loopTo = 287
+      loopTo = Math.min(287, Math.max(140, frameCount - 1))
       const flicker = Math.min(
         2,
         Math.max(0, 0.5 + Math.max(0, cardNoise.getFbm(tunnelTime * 8, 3) + 0.5) * 4)
@@ -1800,8 +1804,11 @@ void main(){
         pauseLoopTime = Math.max(0, pauseLoopTime)
         allowWrap = false
       } else {
-        // Lusion: r>=1 → pauseLoopTime = 0 every frame (unfreeze wave loop)
+        // Landed: unfreeze and restart wave from frame 140
         allowWrap = true
+        if (pauseLoopTime === Number.POSITIVE_INFINITY) {
+          animationTime = 0
+        }
         pauseLoopTime = 0
       }
     }
