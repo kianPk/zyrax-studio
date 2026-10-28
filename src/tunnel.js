@@ -1521,6 +1521,17 @@ void main(){
       Math.tan(expectedRad / 2) * dist * 2 * (vhPx / Math.max(mixedFrameH, 1))
     baseCameraFov = (Math.atan(l / 2 / dist) * 2) / Math.PI * 180
 
+    // Portrait phones: vFOV≈45° → hFOV≈22°, which clips gloves/wave at wait depth.
+    // Raise vFOV so horizontal FOV stays ~50° and the astronaut fits the screen.
+    if (isMobile && camera.aspect > 0 && camera.aspect < 0.85) {
+      const targetHFovDeg = 52
+      const needVFov =
+        ((2 * Math.atan(Math.tan((targetHFovDeg * Math.PI) / 360) / camera.aspect)) *
+          180) /
+        Math.PI
+      baseCameraFov = Math.max(baseCameraFov, Math.min(needVFov, 82))
+    }
+
     if (isWhiteTunnelActive) {
       // Exact Lusion GoalWhiteTunnel: fit(whiteTunnelRatio, 0, 1, 60, 0)
       cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
