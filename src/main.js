@@ -90,7 +90,7 @@ if (list) {
   list.innerHTML = projects
     .map(
       (p) => `
-    <a class="project-item project-type-website" href="${p.url}" target="_blank" rel="noreferrer"
+    <a class="project-item project-type-website" href="${p.url}" rel="noreferrer"
        data-id="${p.id}" data-color-bg="${p.colorBg}" data-color-text="${p.colorText}">
       <div class="project-item-main">
         <div class="project-item-image" style="background:${p.colorBg}">

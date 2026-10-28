@@ -949,6 +949,20 @@ button {
   pointer-events: none;
   z-index: 3;
 }
+html.featured-opening {
+  overflow: hidden;
+}
+html.featured-opening #featured-webgl-canvas {
+  z-index: 40;
+}
+html.featured-opening .project-item-footer,
+html.featured-opening #home-featured-title-top,
+html.featured-opening #home-featured-cta,
+html.featured-opening #header {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
 .project-item-footer {
   margin-top: 1.25em;
   overflow: hidden;

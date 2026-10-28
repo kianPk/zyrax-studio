@@ -1,12 +1,14 @@
 /**
- * Lusion ProjectItem UfxMesh — WebGL depth-parallax cards synced to DOM.
+ * Lusion ProjectItem UfxMesh — WebGL depth-parallax cards + click-into zoom.
  */
 import * as THREE from 'three'
 import { SecondOrderDynamics } from './lusionMotion.js'
-import { clamp, fit, easeExpoOut, getDomRange } from './scrollMath.js'
+import { clamp, fit, easeExpoOut, easeCubicInOut, getDomRange } from './scrollMath.js'
+import { createAnimatedCover, createCoverDepthTexture } from './featuredCovers.js'
 
 const PARALLAX_SAMPLES = 12
 const BLUR_SAMPLES = 6
+const OPEN_DURATION = 1.35
 
 const CardVert = /* glsl */ `
 varying vec2 v_uv;
@@ -53,8 +55,6 @@ float getRoundedCornerMask(vec2 uv, vec2 size, float radius, float ratio) {
   radius = mix(minSize * linearStep(0., minSize, t), radius, linearStep(maxSize, maxDist, t));
   halfSize = min(halfSize, vec2(t));
   float d = sdRoundedBox((uv - 0.5) * u_domWH, halfSize, radius);
-  // SDF: d<0 inside. Avoid smoothstep(0, -fwidth, d) — undefined when edge0>edge1
-  // on some drivers (SwiftShader) and was discarding the whole card.
   float fw = max(fwidth(d), 0.001);
   return 1.0 - smoothstep(-fw, fw, d);
 }
@@ -161,7 +161,7 @@ function makeScalarDynamics(initial, f, z, r) {
 export async function createFeaturedWebgl(projects) {
   const section = document.getElementById('home-featured')
   const list = document.getElementById('project-list')
-  if (!section || !list) return { update() {}, resize() {}, destroy() {} }
+  if (!section || !list) return { update() {}, resize() {}, destroy() {}, beginOpen() {} }
 
   const canvas = document.createElement('canvas')
   canvas.id = 'featured-webgl-canvas'
@@ -182,7 +182,7 @@ export async function createFeaturedWebgl(projects) {
   } catch (err) {
     canvas.remove()
     console.warn('Featured WebGL unavailable', err)
-    return { update() {}, resize() {}, destroy() {} }
+    return { update() {}, resize() {}, destroy() {}, beginOpen() {} }
   }
   document.documentElement.classList.add('has-featured-webgl')
   renderer.setPixelRatio(1)
@@ -190,12 +190,9 @@ export async function createFeaturedWebgl(projects) {
   renderer.outputColorSpace = THREE.SRGBColorSpace
 
   const scene = new THREE.Scene()
-  // Pixel-space ortho (y-up): flip DOM top → camera y
   const camera = new THREE.OrthographicCamera(0, 1, 1, 0, -1000, 1000)
   camera.position.z = 10
 
-  const loader = new THREE.TextureLoader()
-  const base = `${import.meta.env.BASE_URL}assets/projects/`
   const mouse = { x: 0, y: 0 }
   const onMove = (e) => {
     mouse.x = e.clientX
@@ -204,12 +201,23 @@ export async function createFeaturedWebgl(projects) {
   window.addEventListener('pointermove', onMove, { passive: true })
 
   const sharedGeo = new THREE.PlaneGeometry(1, 1)
+  const sharedDepth = createCoverDepthTexture()
   const items = []
   const domItems = Array.from(list.querySelectorAll('.project-item'))
+
+  // Click-into state (Lusion ProjectItemList zoom)
+  let selectedId = null
+  let pendingUrl = null
+  let openProgress = 0
+  let opening = false
+  let openDone = false
+  let listZoom = 0
+  const baseLayout = new Map() // id → { cx, cy, w, h }
 
   await Promise.all(
     domItems.map(async (dom, index) => {
       const id = dom.dataset.id || projects[index]?.id
+      const project = projects.find((p) => p.id === id) || projects[index] || {}
       const main = dom.querySelector('.project-item-main')
       const imgEl = dom.querySelector('.project-item-image img')
       if (imgEl) {
@@ -218,33 +226,14 @@ export async function createFeaturedWebgl(projects) {
       }
       const colorBg = new THREE.Color(dom.dataset.colorBg || '#111111')
 
-      let colorMap
-      let depthMap
-      try {
-        ;[colorMap, depthMap] = await Promise.all([
-          loader.loadAsync(`${base}${id}/home.webp`),
-          loader.loadAsync(`${base}${id}/home_depth.webp`),
-        ])
-      } catch (err) {
-        console.warn('Featured WebGL textures failed for', id, err)
-        if (imgEl) imgEl.style.opacity = '1'
-        return
-      }
-      colorMap.colorSpace = THREE.SRGBColorSpace
-      colorMap.wrapS = colorMap.wrapT = THREE.ClampToEdgeWrapping
-      colorMap.minFilter = THREE.LinearFilter
-      colorMap.magFilter = THREE.LinearFilter
-      colorMap.generateMipmaps = false
-      depthMap.colorSpace = THREE.NoColorSpace
-      depthMap.wrapS = depthMap.wrapT = THREE.ClampToEdgeWrapping
-      depthMap.minFilter = THREE.LinearFilter
-      depthMap.magFilter = THREE.LinearFilter
-      depthMap.generateMipmaps = false
+      const cover = createAnimatedCover({
+        id,
+        colorBg: dom.dataset.colorBg || project.colorBg,
+        colorText: dom.dataset.colorText || project.colorText,
+      })
+      // seed first frame
+      cover.update(index * 0.37)
 
-      const texSize = new THREE.Vector2(
-        colorMap.image?.width || 1024,
-        colorMap.image?.height || 1024
-      )
       const focusPos = new THREE.Vector3(0, 0, -1)
       const focusDyn = new SecondOrderDynamics(new THREE.Vector3(), 1, 0.6, 2)
       const zoomDyn = makeScalarDynamics(1, 2.2, 0.7, 3)
@@ -253,12 +242,12 @@ export async function createFeaturedWebgl(projects) {
       const shiftXYTarget = new THREE.Vector2()
 
       const uniforms = {
-        u_texture: { value: colorMap },
-        u_depthTexture: { value: depthMap },
+        u_texture: { value: cover.texture },
+        u_depthTexture: { value: sharedDepth },
         u_colorBg: { value: colorBg },
         u_showRatio: { value: 0 },
         u_activeRatio: { value: 0 },
-        u_textureSize: { value: texSize },
+        u_textureSize: { value: cover.size.clone() },
         u_domWH: { value: new THREE.Vector2(1, 1) },
         u_shiftXY: { value: shiftXY },
         u_focusPos: { value: focusPos },
@@ -299,16 +288,31 @@ export async function createFeaturedWebgl(projects) {
 
       if (window.innerWidth >= 812) {
         main?.addEventListener('mouseenter', () => {
-          isHover = true
+          if (!opening) isHover = true
         })
         main?.addEventListener('mouseleave', () => {
           isHover = false
         })
       }
 
+      // Intercept click → Lusion zoom-into then navigate
+      dom.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        if (opening) {
+          e.preventDefault()
+          return
+        }
+        const url = project.url || dom.getAttribute('href')
+        if (!url) return
+        e.preventDefault()
+        beginOpen(id, url)
+      })
+
       items.push({
+        id,
         mesh,
         uniforms,
+        cover,
         focusDyn,
         focusPos,
         zoomDyn,
@@ -317,47 +321,85 @@ export async function createFeaturedWebgl(projects) {
         index,
         main,
         dom,
-        update(dt, vw, vh, time, scrollStrength) {
+        get isHover() {
+          return isHover
+        },
+        set isHover(v) {
+          isHover = v
+        },
+        update(dt, vw, vh, time, scrollStrength, zoomU, selected) {
+          const isSelected = selected && selected === id
           const range = getDomRange(dom)
           const inView = range.ratio > -1 && range.ratio < 1
-          if (!inView || !main) {
+          if ((!inView && !opening) || !main) {
             showTime = 0
             mesh.visible = false
             uniforms.u_showRatio.value = 0
             return
           }
           showTime += dt
+          cover.update(time + index)
 
           const rect = main.getBoundingClientRect()
-          const w = Math.max(1, rect.width)
-          const h = Math.max(1, rect.height)
-          uniforms.u_domWH.value.set(w, h)
+          let w = Math.max(1, rect.width)
+          let h = Math.max(1, rect.height)
+          let cx = rect.left + w * 0.5
+          let cy = vh - (rect.top + h * 0.5)
+
+          // Store pre-zoom layout once when opening starts
+          if (opening && !baseLayout.has(id)) {
+            baseLayout.set(id, { cx, cy, w, h })
+          }
+          const base = baseLayout.get(id) || { cx, cy, w, h }
+
+          // Lusion container zoom around selected card
+          if (opening && zoomU > 0 && selected) {
+            const sel = baseLayout.get(selected)
+            if (sel) {
+              const coverScale = Math.max(vw / sel.w, vh / sel.h) * 1.2
+              const s = THREE.MathUtils.lerp(1, coverScale, zoomU)
+              const ox = THREE.MathUtils.lerp(0, vw * 0.5 - sel.cx, zoomU)
+              const oy = THREE.MathUtils.lerp(0, vh * 0.5 - sel.cy, zoomU)
+              cx = (base.cx - sel.cx) * s + sel.cx + ox
+              cy = (base.cy - sel.cy) * s + sel.cy + oy
+              w = base.w * s
+              h = base.h * s
+              // slight tilt like Lusion
+              mesh.rotation.y = zoomU * 0.3 * ((sel.cx - vw * 0.5) / vw)
+              mesh.rotation.z = -zoomU * 0.3 * ((sel.cx - vw * 0.5) / vw)
+            }
+          } else {
+            mesh.rotation.y = 0
+            mesh.rotation.z = 0
+          }
+
+          // Keep UV/mask on original card size while mesh scales to fill viewport
+          uniforms.u_domWH.value.set(base.w, base.h)
           uniforms.u_resolution.value.set(vw, vh)
           uniforms.u_time.value = time
-          uniforms.u_rippleStrength.value = Math.min(0.15, scrollStrength * 0.5)
-          uniforms.u_globalRadius.value = Math.min(w, h) * 0.04
+          uniforms.u_rippleStrength.value = opening
+            ? Math.min(0.2, zoomU * 0.12)
+            : Math.min(0.15, scrollStrength * 0.5)
+          uniforms.u_globalRadius.value = opening
+            ? Math.min(base.w, base.h) * THREE.MathUtils.lerp(0.04, 0.0, zoomU)
+            : Math.min(base.w, base.h) * 0.04
 
-          // Enter: slide from sides + slight rotate (Lusion)
           const C = fit(showTime, 0, 2, 0, 1, easeExpoOut)
           const side = index % 2 - 0.5
-          const slideX = (1 - C) * side * -vw * 0.1
-          const rotZ = (1 - C) * side * 0.1
+          const slideX = opening ? 0 : (1 - C) * side * -vw * 0.1
+          const rotZ = opening ? mesh.rotation.z : (1 - C) * side * 0.1
 
-          // Pixel-space plane centered on DOM rect (camera y-up)
-          mesh.position.set(
-            rect.left + w * 0.5 + slideX,
-            vh - (rect.top + h * 0.5),
-            0
-          )
+          mesh.position.set(cx + slideX, cy, isSelected ? 2 : 0)
           mesh.scale.set(w, h, 1)
-          mesh.rotation.z = -rotZ
+          if (!opening) mesh.rotation.z = -rotZ
 
           const b = fit(showTime, 0, 1.5, 0, 1, easeExpoOut)
-          uniforms.u_showRatio.value = b
-          mesh.visible = b > 0.01
+          uniforms.u_showRatio.value = opening ? Math.max(b, 1) : b
+          mesh.visible = uniforms.u_showRatio.value > 0.01
+          mesh.renderOrder = isSelected ? 100 : 10 + index
 
           const prevHover = hoverRatio
-          hoverRatio = clamp(hoverRatio + (isHover ? 1 : -1) * dt, 0, 1)
+          hoverRatio = clamp(hoverRatio + (isHover && !opening ? 1 : -1) * dt, 0, 1)
           if (prevHover < hoverRatio) {
             const a = findThreshold(prevHover)
             const R = findThreshold(hoverRatio)
@@ -374,10 +416,16 @@ export async function createFeaturedWebgl(projects) {
           shiftXY.lerp(shiftXYTarget, 0.2)
 
           const T = focusDyn.target
-          if (isHover) {
-            const R = hoverRatio > 0 ? fit(hoverRatio, 0, 0.3, 1, 0) * h * 0.75 : 0
-            T.x = ((mouse.x - rect.left - w * 0.5 + Math.cos(time * 20) * R) / w) * -h
-            T.y = ((mouse.y - rect.top - h * 0.5 - Math.sin(time * 30) * R) / h) * h
+          const activeBoost = isSelected ? zoomU : 0
+          if ((isHover && !opening) || activeBoost > 0.01) {
+            if (isHover && !opening) {
+              const R = hoverRatio > 0 ? fit(hoverRatio, 0, 0.3, 1, 0) * h * 0.75 : 0
+              T.x = ((mouse.x - rect.left - rect.width * 0.5 + Math.cos(time * 20) * R) / rect.width) * -rect.height
+              T.y = ((mouse.y - rect.top - rect.height * 0.5 - Math.sin(time * 30) * R) / rect.height) * rect.height
+            } else {
+              T.x = 0
+              T.y = 0
+            }
             T.z = 0.5
           } else {
             T.x = 0
@@ -387,15 +435,30 @@ export async function createFeaturedWebgl(projects) {
           focusDyn.update(dt)
           focusPos.copy(focusDyn.value)
 
-          zoomDyn.target = isHover ? 1 : 0
+          zoomDyn.target = isHover || isSelected ? 1 : 0
           zoomDyn.update(dt)
           uniforms.u_zoomRatio.value = zoomDyn.value
 
-          dofRangeOffsetRatio = clamp(dofRangeOffsetRatio + (isHover ? 0.75 : -1) * dt, 0, 1)
+          dofRangeOffsetRatio = clamp(
+            dofRangeOffsetRatio + ((isHover || isSelected) ? 0.75 : -1) * dt,
+            0,
+            1
+          )
           uniforms.u_dofRangeOffset.value = THREE.MathUtils.lerp(0, -0.5, dofRangeOffsetRatio)
           uniforms.u_saturation.value = 0
           uniforms.u_brightness.value = 0
-          uniforms.u_activeRatio.value = 0
+
+          // Lusion: selected → zoom² fog dive; others get pushed away
+          if (opening) {
+            if (isSelected) {
+              uniforms.u_activeRatio.value = zoomU * zoomU
+            } else {
+              uniforms.u_activeRatio.value = Math.min(1, zoomU * 1.2)
+              uniforms.u_showRatio.value = Math.max(0, 1 - zoomU * 1.4)
+            }
+          } else {
+            uniforms.u_activeRatio.value = 0
+          }
         },
       })
     })
@@ -406,6 +469,41 @@ export async function createFeaturedWebgl(projects) {
   let time = 0
   let lastScroll = window.scrollY
   let scrollStrength = 0
+
+  function freezeScroll(on) {
+    const lenis = window.lenis
+    if (on) {
+      document.documentElement.classList.add('featured-opening')
+      lenis?.stop?.()
+    } else {
+      document.documentElement.classList.remove('featured-opening')
+      lenis?.start?.()
+    }
+  }
+
+  function beginOpen(id, url) {
+    if (opening) return
+    selectedId = id
+    pendingUrl = url
+    opening = true
+    openDone = false
+    openProgress = 0
+    listZoom = 0
+    baseLayout.clear()
+    freezeScroll(true)
+    // Capture layout immediately
+    for (const item of items) {
+      if (!item.main) continue
+      const rect = item.main.getBoundingClientRect()
+      baseLayout.set(item.id, {
+        cx: rect.left + rect.width * 0.5,
+        cy: h - (rect.top + rect.height * 0.5),
+        w: Math.max(1, rect.width),
+        h: Math.max(1, rect.height),
+      })
+      item.isHover = false
+    }
+  }
 
   const resize = () => {
     w = window.innerWidth
@@ -421,27 +519,54 @@ export async function createFeaturedWebgl(projects) {
   window.addEventListener('resize', resize)
 
   return {
+    beginOpen,
     update(dt) {
       time += dt
+      if (opening) {
+        openProgress = Math.min(1, openProgress + dt / OPEN_DURATION)
+        listZoom = easeCubicInOut(openProgress)
+        if (openProgress >= 1 && !openDone) {
+          openDone = true
+          const url = pendingUrl
+          // brief hold on full zoom then navigate
+          setTimeout(() => {
+            if (url) window.open(url, '_blank', 'noopener,noreferrer')
+            // soft reset so returning to tab isn't stuck zoomed
+            setTimeout(() => {
+              opening = false
+              selectedId = null
+              pendingUrl = null
+              openProgress = 0
+              listZoom = 0
+              baseLayout.clear()
+              freezeScroll(false)
+            }, 400)
+          }, 180)
+        }
+      }
+
       const sy = window.scrollY
       const vel = Math.abs(sy - lastScroll) / Math.max(dt, 1e-3)
       lastScroll = sy
       scrollStrength += (Math.min(1, vel * 0.002) - scrollStrength) * 0.15
       const sectionRange = getDomRange(section)
-      const on = sectionRange.isActive
+      const on = sectionRange.isActive || opening
       canvas.style.visibility = on ? 'visible' : 'hidden'
+      canvas.style.zIndex = opening ? '40' : ''
       if (!on) return
-      for (const item of items) item.update(dt, w, h, time, scrollStrength)
+      for (const item of items) item.update(dt, w, h, time, scrollStrength, listZoom, selectedId)
       renderer.render(scene, camera)
     },
     resize,
     destroy() {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('resize', resize)
-      document.documentElement.classList.remove('has-featured-webgl')
+      document.documentElement.classList.remove('has-featured-webgl', 'featured-opening')
       items.forEach((it) => {
+        it.cover?.dispose()
         it.mesh.material.dispose()
       })
+      sharedDepth.dispose()
       sharedGeo.dispose()
       renderer.dispose()
       canvas.remove()
