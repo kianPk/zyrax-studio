@@ -96,19 +96,21 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       const scrollY = window.scrollY || 0
       const vvLeft = Math.round(vv?.offsetLeft || 0)
       const vw = Math.round(vv?.width || window.innerWidth)
-      // Document Y of sticky slot (spacer when pinned, else sticky itself)
       const slotEl = stickyEl.classList.contains('is-pinned') && pinSpacer ? pinSpacer : stickyEl
       const slotTop = slotEl.getBoundingClientRect().top + scrollY
-      // Keep pinned through astronaut wait until the section fully leaves —
-      // unpinning early (bottom <= vh) collapsed height:0 and letterboxed.
-      const shouldPin = scrollY >= slotTop - 1 && sectionRect.bottom > 0
+      const blackFrameIn = ranges.range('blackFrameIn').ratio
+      // goalFrame handoff owns the pin until the section leaves — never unpin via
+      // early slotTop (that caused pin→unpin→re-pin jump into the astronaut).
+      const frameOwned = stickyEl.dataset.goalOwned === 'full' || blackFrameIn >= 0.999
+      const inSection = sectionRect.bottom > 0
+      const shouldPin = inSection && (frameOwned || scrollY >= slotTop - 1)
       const wasPinned = stickyEl.classList.contains('is-pinned')
       stickyEl.classList.toggle('is-pinned', shouldPin)
       if (pinSpacer) pinSpacer.style.height = '0px'
-      // Reparent to body while pinned so Lenis/transform ancestors can't letterbox
       if (shouldPin && !wasPinned) {
-        document.body.appendChild(stickyEl)
-        // Don't dispatch resize here — it rebuilds 4200vh ranges mid-scroll and jumps.
+        if (stickyEl.parentElement !== document.body) {
+          document.body.appendChild(stickyEl)
+        }
       } else if (!shouldPin && wasPinned && stickyHomeParent) {
         if (stickyHomeNext && stickyHomeNext.parentNode === stickyHomeParent) {
           stickyHomeParent.insertBefore(stickyEl, stickyHomeNext)
@@ -117,24 +119,30 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
         } else {
           stickyHomeParent.appendChild(stickyEl)
         }
+        delete stickyEl.dataset.goalOwned
+        stickyEl.style.position = ''
         stickyEl.style.top = ''
         stickyEl.style.left = ''
         stickyEl.style.width = ''
         stickyEl.style.height = ''
-        window.dispatchEvent(new Event('resize'))
+        stickyEl.style.right = ''
+        stickyEl.style.bottom = ''
+        stickyEl.style.zIndex = ''
+        stickyEl.style.background = ''
+        // No resize dispatch — thrashing 4200vh ranges caused scroll jumps.
       }
-      // iOS URL-bar: lock pinned sticky to visualViewport so it doesn't float/gap
       if (shouldPin) {
+        stickyEl.style.position = 'fixed'
         stickyEl.style.top = `${vvTop}px`
         stickyEl.style.left = `${vvLeft}px`
         stickyEl.style.width = `${vw}px`
         stickyEl.style.height = `${vh}px`
         stickyEl.style.right = 'auto'
         stickyEl.style.bottom = 'auto'
+        stickyEl.style.zIndex = '4'
+        stickyEl.style.background =
+          toWhite > 0.05 || whiteTunnelRatio > 0.01 ? '#ffffff' : '#000000'
       }
-      // Match tunnel clear: black title/tunnel → black; white tunnel → white (not page grey)
-      stickyEl.style.background =
-        toWhite > 0.05 || whiteTunnelRatio > 0.01 ? '#ffffff' : '#000000'
     }
 
     // Lusion: map blackTitle through RATIO_FROM..RATIO_TO

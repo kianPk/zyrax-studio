@@ -152,22 +152,23 @@ gsap.ticker.add((time) => {
   const dt = Math.min(0.05, (now - lastTick) / 1000)
   lastTick = now
 
-  // Lusion GoalTunnels autoScroll — desktop only. On mobile it fights touch
-  // scrolling and feels like the page is "buggy"/hijacked.
+  // Lusion GoalTunnels autoScroll — desktop only. Wait for Lenis coast to finish
+  // before nudging, or immediate scrollTo teleports into the astronaut.
   if (!isMobile) {
     if (goalTunnel?.getAutoScrollSpeed) {
       goalAutoScrollSpeed = goalTunnel.getAutoScrollSpeed()
     }
-    // Wait longer between notches so autoScroll doesn't yank mid-wheel (felt like a jump)
-    const wheelIdle = now - lastWheelTime > 420
-    if (wheelIdle && Math.abs(goalAutoScrollSpeed) > 0.01) {
+    const wheelIdle = now - lastWheelTime > 1400 && !lenis.isScrolling
+    if (!wheelIdle) {
+      goalSkipAutoScroll = true
+    } else if (Math.abs(goalAutoScrollSpeed) > 0.01) {
       goalSkipAutoScroll = false
     }
-    goalAutoScrollRatio += Math.abs(goalAutoScrollSpeed) > 0 && !goalSkipAutoScroll ? dt : -1
+    goalAutoScrollRatio += Math.abs(goalAutoScrollSpeed) > 0 && !goalSkipAutoScroll ? dt * 0.35 : -1.2
     goalAutoScrollRatio = Math.max(0, Math.min(1, goalAutoScrollRatio))
-    if (!goalSkipAutoScroll && goalAutoScrollRatio > 0 && Math.abs(goalAutoScrollSpeed) > 0.01) {
+    if (!goalSkipAutoScroll && goalAutoScrollRatio > 0.15 && Math.abs(goalAutoScrollSpeed) > 0.01) {
       const vh = window.innerHeight
-      const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio * 0.55
+      const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio * 0.22
       const next = (lenis.animatedScroll ?? lenis.scroll ?? window.scrollY) + deltaPx
       lenis.scrollTo(next, { immediate: true, force: true })
     }

@@ -215,11 +215,10 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
 
     if (inWindowPhase && frameRect) {
       let E = clamp(blackFrameIn, 0, 1)
-      // Catch up expand as the DOM tablet rises — keeps the framed scene filling
-      // the viewport instead of a cut-off tablet over a half-page white void.
+      // Soft visual catch-up only — full catch-up snapped into astronaut too early
       if (frameRect.top < vh * 0.4) {
         const catchUp = clamp((vh * 0.4 - frameRect.top) / (vh * 0.65), 0, 1)
-        E = Math.max(E, fit(catchUp, 0, 1, 0, 1))
+        E = Math.max(E, fit(catchUp, 0, 1, 0, 0.35))
       }
 
       // Expand toward the visible viewport origin (not layout 0,0 on iOS)
@@ -273,7 +272,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
 
       if (lastMode !== 'window') {
         lastMode = 'window'
-        window.dispatchEvent(new Event('resize'))
+        // Do NOT dispatch resize — rebuilds 4200vh ranges mid-scroll and jumps.
       }
       return { mode: 'window', blackFrameIn: E, blackFrameShow, frameRect }
     }
@@ -286,8 +285,8 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       if (imgInOuter) imgInOuter.style.visibility = 'hidden'
       if (contextInner) contextInner.style.transform = ''
       if (titleEl) titleEl.style.visibility = ''
-      // Hand off fullscreen immediately — waiting for the next scroll tick left
-      // height:0 sticky and exposed white/black letterbox bars on mobile.
+      // Hand off fullscreen — mark ownership so goalDom won't unpin via early slotTop
+      stickyEl.dataset.goalOwned = 'full'
       stickyEl.classList.add('is-pinned')
       stickyEl.style.position = 'fixed'
       stickyEl.style.left = `${vvLeft}px`
@@ -298,7 +297,6 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       stickyEl.style.bottom = 'auto'
       stickyEl.style.zIndex = '4'
       stickyEl.style.background = '#000000'
-      // Sticky is height:0 in flow — never inject a phantom 100vh spacer (scroll jump).
       if (flowSpacer) flowSpacer.style.height = '0px'
       let spacerNode = stickyEl.previousElementSibling
       while (spacerNode) {
@@ -315,8 +313,6 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
         document.body.appendChild(stickyEl)
       }
       lastMode = 'full'
-      // Soft resize without thrashing --vh / 4200vh runway mid-handoff
-      window.dispatchEvent(new Event('resize'))
     } else if (!inWindowPhase && imgInOuter && blackTunnel > 0.05) {
       imgInOuter.style.visibility = 'hidden'
       if (bezel) {

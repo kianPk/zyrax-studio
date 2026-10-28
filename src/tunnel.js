@@ -1555,12 +1555,12 @@ void main(){
     }
     cameraLookStrength = fit(whiteTunnelWaitRatio, 0, 0.1, cameraLookStrength, 0.05)
 
-    // Lusion GoalTunnels.autoScrollSpeed — cinematic keep-alive through goal
+    // Soft keep-alive — only after tablet fully expands (avoids yank into astronaut)
     autoScrollSpeed =
       (1 - freezeRatio) *
       scrollDir *
-      2.5 *
-      fit(blackFrameInRatio, 0, 0.5, 0, 1) *
+      1.15 *
+      fit(blackFrameInRatio, 0.85, 1, 0, 1) *
       fit(whiteTunnelWaitRatio, 0, 0.25, 1, 0)
 
     applyCamera()
@@ -1767,8 +1767,8 @@ void main(){
     autoScrollSpeed =
       (1 - freezeRatio) *
       scrollDir *
-      2.5 *
-      fit(blackFrameInRatio, 0, 0.5, 0, 1) *
+      1.15 *
+      fit(blackFrameInRatio, 0.85, 1, 0, 1) *
       fit(whiteTunnelWaitRatio, 0, 0.25, 1, 0)
 
     updateBlackTunnel(tunnelDeltaTime)
