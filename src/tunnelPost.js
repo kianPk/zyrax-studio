@@ -399,15 +399,12 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
         ? THREE.MathUtils.lerp(1, 3, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
         : 1
 
-    const onGlassBreak =
-      isWhiteTunnelActive && astronautDropRatio > 0.001 && astronautDropRatio < 1
-    const glassGlow = onGlassBreak
-      ? Math.sin(Math.min(astronautDropRatio, 1) * Math.PI)
-      : 0
-
     whiteTunnelBloom = !!isWhiteTunnelActive
     if (isWhiteTunnelActive) {
-      // Exact Lusion: fit(whiteFrameRatio, 0, .05, 4, 2) then wait peak 20
+      // Exact Lusion syncProperties — NO extra glass bloom (that washed the shatter white)
+      // drop < 1: fit(whiteFrameRatio, 0, .05, 4, 2)
+      // drop ≥ 1: fit(whiteTunnelWaitRatio, 0, .1, 0, 20)
+      // haloStrength = 0 for entire white tunnel
       const waitBloomPeak = isMobile ? 12 : 20
       bloomAmount =
         astronautDropRatio < 1
@@ -421,30 +418,19 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
               waitBloomPeak,
               THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
             )
-      // Soft radius so cobalt walls wash into white like Lusion FFT star kernel
-      bloomRadius = isMobile ? 0.45 : 0.62
-      highPassMultiplier = isMobile ? 1.2 : 1.35
-      // Gap clear must bloom: damp near 1 so white*clearAlpha reads as high-key wash
-      whiteBloomDamp = isMobile ? 1.15 : 1.35
-      // Glass punch: Lusion frameBg glow goes blue (#1a2ffb) — lift bloom + halo
-      // so shards read as that crystalline pink/blue wash (not a flat white pane).
-      if (onGlassBreak) {
-        bloomAmount = Math.max(bloomAmount, isMobile ? 8 : 14) * (0.65 + 0.55 * glassGlow)
-        bloomRadius = Math.max(bloomRadius, isMobile ? 0.55 : 0.72)
-        highPassMultiplier = Math.max(highPassMultiplier, 1.45)
-        hs = (isMobile ? 0.1 : 0.16) * glassGlow
-      }
+      bloomRadius = isMobile ? 0.4 : 0.5
+      highPassMultiplier = isMobile ? 1.1 : 1.2
+      whiteBloomDamp = isMobile ? 1.05 : 1.15
+      hs = 0
       // Exact Lusion: fit(whiteTunnelWaitRatio, 0, .1, .3, 0)
       clearAlpha = THREE.MathUtils.lerp(
-        astronautDropRatio < 1 ? 0.38 : 0.3,
+        0.3,
         0,
         THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
       )
-      // Exact Lusion: #fff while flying, #000 once dropped (wave wait)
       clearColor.set(astronautDropRatio < 1 ? '#ffffff' : '#000000')
     } else {
       whiteBloomDamp = 1
-      // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel
       const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
       bloomAmount = THREE.MathUtils.lerp(isMobile ? 22 : 30, isMobile ? 5 : 6, t)
       clearAlpha = 0
@@ -453,22 +439,12 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
 
     haloStrength = hs
 
-    // Wider soft ring on entry title beat (Lusion FFT star reads as a large oval)
     const onEntryTitle =
       !isWhiteTunnelActive && blackFrameInRatio > 0.55 && blackTunnelRatio < 0.2
-    if (onGlassBreak) {
-      haloWidth = 0.7
-      haloRGBShift = isMobile ? 0.02 : 0.035
-      haloMaskInner = 0.2
-      haloMaskOuter = 0.65
-    } else {
-      haloWidth = onEntryTitle ? 0.85 : 0.6
-      // Stage3D default haloRGBShift is 0.02 — entry needs more for the rainbow ring
-      haloRGBShift = onEntryTitle ? 0.04 : isMobile ? 0.012 : 0.02
-      haloMaskInner = onEntryTitle ? 0.15 : 0.3
-      haloMaskOuter = onEntryTitle ? 0.75 : 0.5
-    }
-    // Do NOT stomp white-tunnel bloomRadius/highPass — that killed the wash.
+    haloWidth = onEntryTitle ? 0.85 : 0.6
+    haloRGBShift = onEntryTitle ? 0.04 : isMobile ? 0.012 : 0.02
+    haloMaskInner = onEntryTitle ? 0.15 : 0.3
+    haloMaskOuter = onEntryTitle ? 0.75 : 0.5
     if (!isWhiteTunnelActive) {
       bloomRadius = isMobile ? 0.15 : onEntryTitle ? 0.55 : 0.5
       highPassMultiplier = onEntryTitle ? 1.15 : 1

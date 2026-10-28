@@ -957,18 +957,20 @@ void main(){
     heroMatrix.compose(basePathPos, basePathQuat, oneScale)
     heroMatrix.multiply(motionMatrix)
     heroMatrix.decompose(tmpV, tmpQ, tmpV2)
-    // Approximate Lusion astronaut-only viewOffset as world shift at hero depth
-    // (main camera stays put so glass/frame don't pan with the drop).
+    // Approximate Lusion astronaut-only viewOffset as world shift at hero depth.
+    // Use the looking-distance to DEFAULT_LOOK (stable), not to the moving hero —
+    // otherwise pan magnitude exploded as the suit came close and killed the wave.
     {
-      const vwBuf = Math.max(1, window.innerWidth || 1)
-      const vhBuf = Math.max(1, window.innerHeight || 1)
-      const dist = Math.max(0.5, camera.position.distanceTo(tmpV))
+      const vwBuf = Math.max(1, renderer.domElement.width || window.innerWidth)
+      const vhBuf = Math.max(1, renderer.domElement.height || window.innerHeight)
+      const dist = Math.max(0.5, camera.position.distanceTo(DEFAULT_LOOK))
       const worldH =
         2 * Math.tan(((camera.fov || 45) * Math.PI) / 360) * dist
       const worldW = worldH * (vwBuf / vhBuf)
-      // setViewOffset(+ox,+oy): content shifts opposite; oy=-ce → fall down
-      tmpV.x += (astroExtraOffsetX / vwBuf) * worldW
-      tmpV.y += (astroExtraOffsetY / vhBuf) * worldH
+      // Soften vs raw pixel→world (viewOffset is a frustum shift, not 1:1 translate)
+      const k = 0.55
+      tmpV.x += (astroExtraOffsetX / vwBuf) * worldW * k
+      tmpV.y += (astroExtraOffsetY / vhBuf) * worldH * k
     }
     instancePos.setXYZ(0, tmpV.x, tmpV.y, tmpV.z)
     instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
@@ -1134,15 +1136,20 @@ void main(){
     // Exact Lusion astronaut-only extras during out/drop (NOT main camera):
     //   extraCameraViewportOffsetX = -fit(q.ratio,0,1,0,-center,cubicInOut)
     //   extraCameraViewportOffsetY = -ce
+    // Cap ce at drop length so wait scroll doesn't keep shoving the wave off-frame.
     {
       const dropPx = ranges.range('astronautDrop')
-      const ce = Math.max(0, dropPx.pixel || 0)
+      const ceRaw = Math.max(0, dropPx.pixel || 0)
+      const ceMax = Math.max(1, dropPx.pixelCount || ceRaw)
+      const ce = Math.min(ceRaw, ceMax)
       dropScrollPx = ce
       const vwPx = window.innerWidth || 1
-      const outEl =
-        sectionEl.querySelector('#home-goal-image-out') ||
-        sectionEl.querySelector('#home-goal-image-out-inner')
-      const w = outEl?.getBoundingClientRect?.()
+      // Prefer sticky/clip center while pinned — out DOM is often off-screen
+      const host =
+        stickyEl?.querySelector?.('[data-goal-screen-clip]') ||
+        stickyEl ||
+        sectionEl.querySelector('#home-goal-image-out')
+      const w = host?.getBoundingClientRect?.()
       const centerDelta = w
         ? w.left + w.width * 0.5 - vwPx * 0.5
         : 0
@@ -1155,7 +1162,6 @@ void main(){
         easeCubicInOut
       )
       astroExtraOffsetY = -ce
-      // Frame-centering filled below after frameBg update
       frameCamOffsetX = 0
       frameCamOffsetY = 0
     }
@@ -1769,12 +1775,6 @@ void main(){
     const cardFade = fit(drop, 0.9, 1, 0, 1, easeCubicIn)
     isCardActive = cardFade > 0
 
-    // Kick the wave loop the moment drop completes (Lusion pauseLoopTime = 0)
-    if (drop >= 1 && pauseLoopTime === Number.POSITIVE_INFINITY) {
-      pauseLoopTime = 0
-      animationTime = 0
-    }
-
     let speed
     let loopFrom
     let loopTo
@@ -1787,11 +1787,10 @@ void main(){
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
-      // Wave loop frames 140–287. Speed 0 until drop≈0.9 (linear punch shows),
-      // then ramps; full loop forever once drop≥1 (astronautWait).
+      // Exact Lusion: wave frames 140–287
       speed = fit(drop, 0.9, 1, 0, 1)
       loopFrom = 140
-      loopTo = Math.min(Math.max(140, frameCount - 1), 287)
+      loopTo = 287
       const flicker = Math.min(
         2,
         Math.max(0, 0.5 + Math.max(0, cardNoise.getFbm(tunnelTime * 8, 3) + 0.5) * 4)
@@ -1801,6 +1800,7 @@ void main(){
         pauseLoopTime = Math.max(0, pauseLoopTime)
         allowWrap = false
       } else {
+        // Lusion: r>=1 → pauseLoopTime = 0 every frame (unfreeze wave loop)
         allowWrap = true
         pauseLoopTime = 0
       }
@@ -1812,23 +1812,23 @@ void main(){
     }
     if (loopLinearBlend === 1) animationTime = 0
 
+    // Exact Lusion: R = c-l+1; E = w*60 % R; I = floor(E); F = (I+1)%R+l; I += l
     const span = Math.max(1, loopTo - loopFrom + 1)
     const heroShift = partTimeShifts[0]
-    // Lusion: T===0 uses timeShift as-is (cloneTimeShift = -1 sentinel)
     const heroW = heroShift + animationTime
-    let heroE = ((heroW * 60) % span + span) % span
+    let heroE = heroW * 60
+    heroE = ((heroE % span) + span) % span
     let heroI = Math.floor(heroE)
     let heroF = ((heroI + 1) % span) + loopFrom
     heroI += loopFrom
-    if (heroF < heroI) {
-      if (!allowWrap) {
-        // Freeze on first wave frame until drop finishes (Lusion hold)
-        heroF = heroI = loopFrom
-        animationTime = -heroShift
-        pauseLoopTime = Number.POSITIVE_INFINITY
-      }
+    if (heroF < heroI && !allowWrap) {
+      // Freeze on first wave frame until drop finishes (Lusion hold)
+      heroF = heroI = loopFrom
+      animationTime = -heroShift
+      pauseLoopTime = Number.POSITIVE_INFINITY
     }
-    const heroBlend = heroF < heroI && !allowWrap ? 0 : heroE - Math.floor(heroE)
+    // Lusion blend is always E%1 (even across wrap when allowWrap)
+    const heroBlend = heroE - Math.floor(heroE)
     blend1.setXYZ(0, heroI, heroF, heroBlend)
     blend1.needsUpdate = true
 
