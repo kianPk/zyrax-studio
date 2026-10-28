@@ -513,9 +513,10 @@ button {
 
 .section {
   position: relative;
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--grid-gap);
+  column-gap: var(--grid-gap);
   padding: var(--base-padding-y) var(--base-padding-x);
 }
 
@@ -524,7 +525,6 @@ button {
   height: calc(var(--vh, 1vh) * 100);
   align-content: flex-start;
   grid-template-rows: auto 1fr;
-  padding-bottom: 0;
 }
 #home-hero-title {
   position: relative;
@@ -1828,6 +1828,11 @@ html.is-white-bg #end-section-title-bottom-right-decoration {
     grid-column: 1 / span 12;
     font-size: 6vw;
     margin-top: calc(var(--base-padding-y) + var(--header-size) * 2);
+  }
+  /* Lusion mobile uses 6-col grid + span 6 (= full width). We stay on 12-col. */
+  #home-hero-visual-container {
+    grid-column: 1 / -1;
+    margin-bottom: calc(2 * var(--base-padding-y));
   }
   #home-reel-container,
   #home-reel-title,

@@ -206,9 +206,17 @@ function seeded(seed) {
   }
 }
 
-function fit(v, a, b, c, d) {
-  const t = Math.max(0, Math.min(1, (v - a) / (b - a || 1)))
+function fit(v, a, b, c, d, easeFn) {
+  let t = Math.max(0, Math.min(1, (v - a) / (b - a || 1)))
+  if (easeFn) t = easeFn(t)
   return c + (d - c) * t
+}
+
+/** CSS-ish backOut — matches Lusion ease.backOut on hero camera */
+function easeBackOut(t) {
+  const c1 = 1.70158
+  const c3 = c1 + 1
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
 }
 
 class Body {
@@ -292,7 +300,7 @@ export async function createBalloonsHero(canvas, visualEl) {
 
   const lightPosition = new THREE.Vector3(10, 10, 5)
   const sphereData = buildSphereData(fancyColor)
-  const rand = seeded('balloonBody-25')
+  const rand = seeded('balloon24')
   const bodies = []
   const meshes = []
   const materials = []
@@ -385,13 +393,20 @@ export async function createBalloonsHero(canvas, visualEl) {
   canvas.addEventListener('click', onClick)
   visualEl?.addEventListener('click', onClick)
 
+  // Lusion renders balloons on a fullscreen camera + setViewOffset crop.
+  // Our canvas is the visual box only — remap FOV so on-screen size matches.
+  let cameraDollyZoomFovOffset = 0
   const resize = () => {
     const el = visualEl || canvas.parentElement
     const w = el.clientWidth
     const h = el.clientHeight
     const aspect = w / Math.max(h, 1)
-    // Lusion: fit(aspect, 2.2, 2/3, 18, 30)
-    camera.fov = fit(aspect, 2.2, 2 / 3, 18, 30)
+    const baseFov = fit(aspect, 2.2, 2 / 3, 18, 30)
+    const vh = window.visualViewport?.height || window.innerHeight || h
+    const k = Math.max(0.15, Math.min(1, h / Math.max(vh, 1)))
+    // Smaller container-FOV ≈ Lusion fullscreen FOV cropped to this box
+    camera.fov =
+      ((2 * Math.atan(Math.tan((baseFov * Math.PI) / 360) * k)) * 180) / Math.PI
     camera.aspect = aspect
     camera.updateProjectionMatrix()
     renderer.setSize(w, h, false)
@@ -423,10 +438,22 @@ export async function createBalloonsHero(canvas, visualEl) {
     const steps = isMobile ? 1 : 2
     dt /= steps
 
-    // Lusion intro: camera z 25 → 17.5
+    // Lusion HomeBalloons.syncProperties — z + dolly-zoom FOV offset
     const t = (now - start) / 1000
-    const camZ = fit(t, 0.3, 2.0, 25, 17.5)
+    const camZ = fit(t, 0.3, 2.0, 25, 17.5, easeBackOut)
     camera.position.z = camZ
+    cameraDollyZoomFovOffset = fit(t, 0.3, 3.0, 100, 0, easeBackOut)
+    // Dolly-zoom: push camera so apparent FOV changes without frustum jump
+    {
+      const baseFov = camera.fov
+      const tempFov = Math.max(1, Math.min(170, baseFov + cameraDollyZoomFovOffset))
+      const dist = camZ
+      const n =
+        (dist * Math.tan(((baseFov / 360) * Math.PI) / 2)) /
+          Math.tan(((tempFov / 360) * Math.PI) / 2) -
+        dist
+      if (Number.isFinite(n)) camera.position.z = camZ + n
+    }
 
     for (let s = 0; s < steps; s++) {
       const v = new THREE.Vector3(mouse.x, mouse.y, 0.5).unproject(camera)
@@ -551,8 +578,9 @@ export async function createBalloonsHero(canvas, visualEl) {
       }
     }
 
-    camera.position.x += (mouse.x * 0.9 - camera.position.x) * 0.04
-    camera.position.y += (mouse.y * 0.55 - camera.position.y) * 0.04
+    // Lusion balloons stage keeps cameraLookStrength at 0 — no mouse pan on cam
+    camera.position.x = 0
+    camera.position.y = 0
     camera.lookAt(0, 0, 0)
 
     renderer.render(scene, camera)
