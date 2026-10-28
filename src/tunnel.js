@@ -1132,7 +1132,7 @@ void main(){
     const earthShow = THREE.MathUtils.clamp(blackFrameShowRatio, 0, 1)
     const earthIn = THREE.MathUtils.clamp(blackFrameInRatio, 0, 1)
     earthBgMesh.position.y = -(10 * (1 - earthShow) + 2.5 + 30 * earthIn)
-    earthBgMesh.scale.setScalar(fit(earthIn, 0, 0.5, 58, 85))
+    earthBgMesh.scale.setScalar(fit(earthIn, 0, 0.5, 40, 70))
     earthBgGroup.rotation.x = fit(earthIn, 0, 0.5, 0, -1)
     earthBgMesh.visible = earthIn < 1 && !isWhiteTunnelActive && !isBlackTunnelActive
 
@@ -1177,13 +1177,10 @@ void main(){
       path = samplePathByFrame(outAnim, frame, 100)
       path.p.y -= (isMobile ? 0 : 0.4) * easeBackInOut(astronautDropRatio)
     } else {
-      // M = 100 * cubicIn(blackTitleRatio) — also ease in during tablet window
-      // so the astronaut already fills the device before blackTitle zoom.
-      const preTitle = fit(Math.max(blackFrameInRatio, 0.001), 0, 1, 0.28, 0.4)
-      const titleDrive = Math.max(blackTitleRatio, windowed ? preTitle : 0)
+      // Exact Lusion: inAnimation driven by blackFrameInRatio (0→100)
       path = samplePathByFrame(
         inAnim,
-        100 * easeCubicIn(Math.min(titleDrive, 1)),
+        100 * easeCubicIn(blackFrameInRatio),
         100
       )
     }
@@ -1210,10 +1207,10 @@ void main(){
 
     astronautRoot.visible = showRatio > 0.02
 
-    // —— Lusion CameraControls FOV / dolly + look strength ——
-    // Port GoalTunnels frameHeight→FOV: mix frame into viewport during blackFrameIn / whiteFrame
+    // —— Exact Lusion GoalTunnels FOV ——
+    // cameraFov from mix(frameHeight, viewportHeight, blackFrameIn|whiteFrame)
+    // frameHeight = #home-goal-image-in hole (screen clip while windowed)
     const vhPx = window.innerHeight || 1
-    // While tablet-framed, use the on-screen clip height so the astronaut fills the device
     const clipEl = stickyEl?.querySelector?.('[data-goal-screen-clip]')
     const frameH = Math.max(
       1,
@@ -1223,11 +1220,7 @@ void main(){
       blackFrameInRatio < 1
         ? blackFrameInRatio
         : 1 - whiteFrameRatio
-    // Window phase: oversize mixedFrameH so FOV tightens and astronaut fills the tablet
-    const frameStart = windowed
-      ? Math.max(frameH * (isMobile ? 1.75 : 2.25), vhPx * (isMobile ? 0.7 : 0.92))
-      : frameH * (isMobile ? 0.72 : 0.55)
-    const mixedFrameH = THREE.MathUtils.lerp(frameStart, vhPx, frameMix)
+    const mixedFrameH = THREE.MathUtils.lerp(frameH, vhPx, frameMix)
     const dist = DEFAULT_CAM.distanceTo(DEFAULT_LOOK)
     const expectedRad = (EXPECTED_FOV / 180) * Math.PI
     const l =
@@ -1235,8 +1228,7 @@ void main(){
     baseCameraFov = (Math.atan(l / 2 / dist) * 2) / Math.PI * 180
 
     if (isWhiteTunnelActive) {
-      // Lusion GoalWhiteTunnel: only dolly-zoom offset — FOV comes from frameHeight mix above
-      // Exact Lusion GoalWhiteTunnel: fit(whiteTunnelRatio, 0, 1, 60, 0) on all devices
+      // Exact Lusion GoalWhiteTunnel: fit(whiteTunnelRatio, 0, 1, 60, 0)
       cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
     } else if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
@@ -1245,14 +1237,8 @@ void main(){
         smoothstep(0, 0.2, blackTunnelRatio)
       blackTunnelGroup.position.z = -80 * cUnMix(0.2, 0, blackTunnelRatio)
     } else {
-      // Start tighter in the tablet, ease to Lusion dolly as the frame expands
-      cameraDollyZoomFovOffset = fit(
-        blackFrameInRatio,
-        0,
-        1,
-        windowed ? (isMobile ? -22 : -36) : isMobile ? 12 : 20,
-        0
-      )
+      // Entry / title: Lusion leaves cameraDollyZoomFovOffset at 0
+      cameraDollyZoomFovOffset = 0
       blackTunnelGroup.position.z = -80
     }
     // syncProperties cameraLookStrength
