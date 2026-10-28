@@ -321,7 +321,26 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       }
     }
 
-    if (!inView || sectionRect.top > vh * 0.9) {
+    // Scrolled back above (or past) the goal — release ownership so hero isn't
+    // covered by a leftover fullscreen astronaut overlay.
+    if (!inView) {
+      if (lastMode === 'window') {
+        clearWindowed()
+        document.documentElement.classList.remove('is-goal-window')
+        if (contextInner) contextInner.style.transform = ''
+      }
+      if (lastMode === 'full' || stickyEl.dataset.goalOwned === 'full') {
+        delete stickyEl.dataset.goalOwned
+      }
+      lastMode = ''
+      if (bezel) {
+        bezel.style.opacity = '0'
+        bezel.style.visibility = 'hidden'
+      }
+      return { mode: '', blackFrameIn, blackFrameShow, frameRect }
+    }
+
+    if (sectionRect.top > vh * 0.9) {
       if (bezel) {
         bezel.style.opacity = '0'
         bezel.style.visibility = 'hidden'

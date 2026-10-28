@@ -99,11 +99,23 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       const slotEl = stickyEl.classList.contains('is-pinned') && pinSpacer ? pinSpacer : stickyEl
       const slotTop = slotEl.getBoundingClientRect().top + scrollY
       const blackFrameIn = ranges.range('blackFrameIn').ratio
-      // goalFrame handoff owns the pin until the section leaves — never unpin via
-      // early slotTop (that caused pin→unpin→re-pin jump into the astronaut).
-      const frameOwned = stickyEl.dataset.goalOwned === 'full' || blackFrameIn >= 0.999
-      const inSection = sectionRect.bottom > 0
-      const shouldPin = inSection && (frameOwned || scrollY >= slotTop - 1)
+      const blackTitle = ranges.range('blackTitle').ratio
+      // Must actually intersect the viewport. `bottom > 0` alone is true for the
+      // whole 4200vh runway while you're back on the hero — that left a black
+      // astronaut overlay stuck over the top of the page after scrolling up.
+      const sectionInView = sectionRect.bottom > 0 && sectionRect.top < vh
+      const frameOwned = stickyEl.dataset.goalOwned === 'full'
+      const pastSlot = scrollY >= slotTop - 1
+      // Goal scroll ratios drop to ~0 above the section — use that to release pin
+      // when scrolling back to the hero (frameOwned alone was sticky forever).
+      const goalActive =
+        blackFrameIn > 0.02 ||
+        blackTitle > 0.02 ||
+        blackTunnelRatio > 0.01 ||
+        whiteTunnelRatio > 0.01 ||
+        astronautDropRatio > 0.01
+      const shouldPin =
+        sectionInView && goalActive && (frameOwned || pastSlot || blackFrameIn >= 0.999)
       const wasPinned = stickyEl.classList.contains('is-pinned')
       stickyEl.classList.toggle('is-pinned', shouldPin)
       if (pinSpacer) pinSpacer.style.height = '0px'
@@ -129,7 +141,13 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
         stickyEl.style.bottom = ''
         stickyEl.style.zIndex = ''
         stickyEl.style.background = ''
-        // No resize dispatch — thrashing 4200vh ranges caused scroll jumps.
+        stickyEl.style.opacity = ''
+        stickyEl.style.visibility = ''
+        stickyEl.style.transform = ''
+        stickyEl.style.overflow = ''
+        stickyEl.style.borderRadius = ''
+        stickyEl.style.pointerEvents = ''
+        stickyEl.classList.remove('is-windowed')
       }
       if (shouldPin) {
         stickyEl.style.position = 'fixed'
@@ -140,6 +158,8 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
         stickyEl.style.right = 'auto'
         stickyEl.style.bottom = 'auto'
         stickyEl.style.zIndex = '4'
+        stickyEl.style.visibility = 'visible'
+        stickyEl.style.opacity = '1'
         stickyEl.style.background =
           toWhite > 0.05 || whiteTunnelRatio > 0.01 ? '#ffffff' : '#000000'
       }
