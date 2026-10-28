@@ -61,7 +61,8 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
   computeOffsets()
   window.addEventListener('resize', computeOffsets)
 
-  // Spacer keeps layout height when sticky is position:fixed
+  // Marker for the sticky's flow slot. Sticky itself is height:0 in document
+  // flow (Lusion canvas is fixed) — never inflate this to 100vh or scroll jumps.
   let pinSpacer = null
   let stickyHomeParent = null
   let stickyHomeNext = null
@@ -71,6 +72,7 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     pinSpacer = document.createElement('div')
     pinSpacer.setAttribute('aria-hidden', 'true')
     pinSpacer.style.width = '100%'
+    pinSpacer.style.height = '0px'
     pinSpacer.style.pointerEvents = 'none'
     stickyEl.parentElement.insertBefore(pinSpacer, stickyEl)
   }
@@ -102,13 +104,11 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
       const shouldPin = scrollY >= slotTop - 1 && sectionRect.bottom > 0
       const wasPinned = stickyEl.classList.contains('is-pinned')
       stickyEl.classList.toggle('is-pinned', shouldPin)
-      if (pinSpacer) {
-        pinSpacer.style.height = shouldPin ? `${vh}px` : '0px'
-      }
+      if (pinSpacer) pinSpacer.style.height = '0px'
       // Reparent to body while pinned so Lenis/transform ancestors can't letterbox
       if (shouldPin && !wasPinned) {
         document.body.appendChild(stickyEl)
-        window.dispatchEvent(new Event('resize'))
+        // Don't dispatch resize here — it rebuilds 4200vh ranges mid-scroll and jumps.
       } else if (!shouldPin && wasPinned && stickyHomeParent) {
         if (stickyHomeNext && stickyHomeNext.parentNode === stickyHomeParent) {
           stickyHomeParent.insertBefore(stickyEl, stickyHomeNext)

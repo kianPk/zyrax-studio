@@ -1046,6 +1046,8 @@ html.featured-opening #header {
   position: relative;
   min-height: calc(var(--vh, 1vh) * 100);
   font-size: clamp(0.875rem, 1vw, 2rem);
+  /* Prevent browser scroll-anchoring from jumping when sticky reparents */
+  overflow-anchor: none;
 }
 #home-goal-context {
   /* Exact Lusion: no extra section padding — title margin handles spacing */
@@ -1200,6 +1202,7 @@ html.is-goal-window body {
   overflow: hidden;
   background: #000000;
   z-index: 1;
+  overflow-anchor: none;
 }
 #home-goal-tunnel-sticky.is-pinned {
   /* Full-bleed to visible viewport — JS sets exact visualViewport box on mobile.

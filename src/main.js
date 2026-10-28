@@ -158,7 +158,8 @@ gsap.ticker.add((time) => {
     if (goalTunnel?.getAutoScrollSpeed) {
       goalAutoScrollSpeed = goalTunnel.getAutoScrollSpeed()
     }
-    const wheelIdle = now - lastWheelTime > 80
+    // Wait longer between notches so autoScroll doesn't yank mid-wheel (felt like a jump)
+    const wheelIdle = now - lastWheelTime > 420
     if (wheelIdle && Math.abs(goalAutoScrollSpeed) > 0.01) {
       goalSkipAutoScroll = false
     }

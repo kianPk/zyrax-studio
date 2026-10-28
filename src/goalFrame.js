@@ -298,7 +298,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       stickyEl.style.bottom = 'auto'
       stickyEl.style.zIndex = '4'
       stickyEl.style.background = '#000000'
-      // Keep layout height via goalDom's pin spacer (not flowSpacer) before reparent
+      // Sticky is height:0 in flow — never inject a phantom 100vh spacer (scroll jump).
       if (flowSpacer) flowSpacer.style.height = '0px'
       let spacerNode = stickyEl.previousElementSibling
       while (spacerNode) {
@@ -306,7 +306,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
           spacerNode !== flowSpacer &&
           spacerNode.getAttribute('aria-hidden') === 'true'
         ) {
-          spacerNode.style.height = `${vh}px`
+          spacerNode.style.height = '0px'
           break
         }
         spacerNode = spacerNode.previousElementSibling
@@ -315,6 +315,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
         document.body.appendChild(stickyEl)
       }
       lastMode = 'full'
+      // Soft resize without thrashing --vh / 4200vh runway mid-handoff
       window.dispatchEvent(new Event('resize'))
     } else if (!inWindowPhase && imgInOuter && blackTunnel > 0.05) {
       imgInOuter.style.visibility = 'hidden'
