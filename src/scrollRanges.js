@@ -120,17 +120,18 @@ export function createGoalRanges(sectionEl) {
     baseY = (imgIn.top || section.top) - vh
 
     const showPx = (vh + inH) * 0.5
-    // Enough runway for glass punch-through + one full wave (drop 0.9→1)
-    const dropPx = Math.max((vh + outH) * 0.5 + vh, vh * 1.85)
+    // Glass punch-through — keep drop shorter so wait (wave loop) starts
+    // while the sticky is still pinned (Lusion-style readable outro).
+    const dropPx = Math.max((vh + outH) * 0.45 + vh * 0.65, vh * 1.25)
 
-    // Wait = end-section + footer after the goal (Lusion footer delta)
+    // Wait = wave + stickers while pinned, then end-section/footer
     const footer =
       document.getElementById('footer-section') ||
       document.getElementById('end-section') ||
       document.querySelector('footer')
     const docBottom = document.documentElement.scrollHeight
     const footerBottom = footer ? Math.max(domRange(footer).bottom, docBottom) : docBottom
-    let waitPx = Math.max(vh * 0.85, footerBottom - section.bottom)
+    let waitPx = Math.max(vh * 1.35, footerBottom - section.bottom)
 
     // Max scroll progress we can actually reach (last viewport of the page)
     const maxProgress = Math.max(vh * 12, docBottom - vh - baseY)

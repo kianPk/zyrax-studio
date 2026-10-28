@@ -1044,7 +1044,9 @@ void main(){
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
     whiteTunnelAstronautOutRatio = ranges.between('whiteFrameBreak', 'astronautWait').ratio
-    // Exact Lusion: extraCameraViewportOffset + cameraViewportOffset
+    // Lusion GoalTunnelAstronauts extras — pan while dropping / waving.
+    // Use extras only (cameraViewportOffset g/v is handled by our sticky overlay).
+    // Clamp Y so headless/short wait ranges don't throw the hero off-frame.
     {
       const dropPx = ranges.range('astronautDrop')
       const ce = Math.max(0, dropPx.pixel || 0)
@@ -1058,7 +1060,7 @@ void main(){
       const centerDelta = w
         ? w.left + w.width * 0.5 - vwPx * 0.5
         : 0
-      const extraX = fit(
+      camViewOffsetX = fit(
         astronautDropRatio,
         0,
         1,
@@ -1066,17 +1068,12 @@ void main(){
         centerDelta,
         easeCubicInOut
       )
-      const extraY = -ce
-      // E = fit(offsetY, whiteFrameOut.from→to, 1, 0)
-      const E = 1 - whiteFrameOutRatio
-      const te = dropPx.ratio
-      const g = te < 1 && w ? vwPx * 0.5 - w.left - w.width * 0.5 : 0
-      const K = vhLocal * 0.2 * (1 - Math.min(1, blackFrameShowRatio))
-      // Frame-lock Y (Lusion v with scroll cancelled once u tracks offsetY)
-      let v = w ? -(w.top + K + w.height * 0.5 - vhLocal * 0.5) : 0
-      if (te >= 1) v = THREE.MathUtils.clamp(v, -vhLocal * 0.35, vhLocal * 0.35)
-      camViewOffsetX = g * (1 - E) + extraX
-      camViewOffsetY = v * (1 - E) + extraY
+      // -ce through drop+wait; ease in and soft-cap so the wave stays readable
+      const rawY = -ce
+      const maxPan = vhLocal * 0.55
+      camViewOffsetY =
+        fit(astronautDropRatio, 0.35, 1, 0, 1) *
+        THREE.MathUtils.clamp(rawY, -maxPan, maxPan)
     }
 
     isBlackTitleActive = blackTitleRatio < 1
