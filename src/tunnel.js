@@ -1487,6 +1487,13 @@ void main(){
       heroMotion.rotationFrequency = fit(whiteFrameRatio, 0, 0.45, 0.4, 0.15)
       heroMotion.positionAmplitude = fit(whiteFrameRatio, 0, 0.75, 5, 0)
       heroMotion.rotationAmplitude = fit(whiteFrameRatio, 0, 0.75, 15, 0)
+      // Light body sway while waving on the wait finale
+      if (astronautDropRatio >= 1) {
+        heroMotion.positionFrequency = 0.35
+        heroMotion.rotationFrequency = 0.28
+        heroMotion.positionAmplitude = 0.55
+        heroMotion.rotationAmplitude = 8
+      }
     }
 
     astronautRoot.visible = showRatio > 0.02
@@ -1791,8 +1798,9 @@ void main(){
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
-      // Exact Lusion: wave frames 140–287 (buf has 288 frames)
-      speed = fit(drop, 0.9, 1, 0, 1)
+      // Wave frames 140–287 — a bit faster than Lusion's base once landed
+      // so the hand-wave reads more clearly on the wait finale.
+      speed = fit(drop, 0.85, 1, 0, 1) * (drop >= 1 ? 1.45 : 1)
       loopFrom = 140
       loopTo = Math.min(287, Math.max(140, frameCount - 1))
       const flicker = Math.min(
