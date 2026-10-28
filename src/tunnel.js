@@ -194,6 +194,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     gridBaseHd,
     gridStructureHd,
     greebleNor,
+    earthCardGeo,
+    earthLandscape,
     ...partGeos
   ] = await Promise.all([
     loadBuf(`${base}assets/models/tunnels/astronaut_animations.buf`),
@@ -213,6 +215,11 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       ? loadBuf(`${base}assets/models/tunnels/grid_structure_hd.buf`)
       : Promise.resolve(null),
     new THREE.TextureLoader().loadAsync(`${base}assets/textures/tunnels/grids/greeble_nor.webp`),
+    // Lusion GoalTunnelsBackground — Earth plate behind the astronaut in the tablet
+    loadBuf(`${base}assets/models/tunnels/earth_card.buf`),
+    new THREE.TextureLoader().loadAsync(
+      `${base}assets/textures/tunnels/earth_landscape.jpg`
+    ),
     ...PARTS.map((p) => loadBuf(`${base}assets/models/tunnels/astronaut_${p}.buf`)),
   ])
 
@@ -650,6 +657,47 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   bgPlane.renderOrder = -10
   scene.add(bgPlane)
 
+  // —— GoalTunnelsBackground (Earth behind astronaut in the tablet window) ——
+  earthLandscape.colorSpace = THREE.NoColorSpace
+  earthLandscape.generateMipmaps = false
+  earthLandscape.minFilter = THREE.LinearFilter
+  earthLandscape.magFilter = THREE.LinearFilter
+  const earthBgUniforms = {
+    u_earthTexture: { value: earthLandscape },
+    u_bgColor: { value: new THREE.Color(0x000000) },
+    u_atmosphereColor: { value: new THREE.Color('#4169E1') },
+  }
+  const earthVert = /* glsl */ `
+varying vec2 v_uv;
+void main(){
+  vec3 pos=position;
+  pos.z*=0.1;
+  vec4 mvPosition=modelViewMatrix*vec4(pos,1.);
+  gl_Position=projectionMatrix*mvPosition;
+  v_uv=uv;
+}`
+  // Exact Lusion GoalTunnelsBackground frag (minus unused blueNoise include)
+  const earthFrag = /* glsl */ `
+varying vec2 v_uv;
+uniform sampler2D u_earthTexture;
+void main(){
+  vec3 earthMap=texture2D(u_earthTexture,v_uv).rgb;
+  gl_FragColor=vec4(earthMap, 0.0);
+}`
+  const earthBgGroup = new THREE.Group()
+  const earthBgMat = new THREE.ShaderMaterial({
+    uniforms: earthBgUniforms,
+    vertexShader: earthVert,
+    fragmentShader: earthFrag,
+    depthWrite: true,
+    depthTest: true,
+  })
+  const earthBgMesh = new THREE.Mesh(earthCardGeo, earthBgMat)
+  earthBgMesh.frustumCulled = false
+  earthBgMesh.renderOrder = -1
+  earthBgGroup.add(earthBgMesh)
+  scene.add(earthBgGroup)
+
   // —— Black tunnel (Lusion GoalBlackTunnel grid_ld + grid_hd) ——
   const blackTunnelGroup = new THREE.Group()
   scene.add(blackTunnelGroup)
@@ -972,6 +1020,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     }
 
     blackFrameInRatio = ranges.range('blackFrameIn').ratio
+    const blackFrameShowRatio = ranges.range('blackFrameShow').ratio
     blackTitleRatio = ranges.range('blackTitle').ratio
     blackTunnelRatio = ranges.range('blackTunnel').ratio
     // Keep WebGL buffer in sync while the tablet frame expands
@@ -1077,6 +1126,16 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     // washes the corridor. bgPlane writes α=0 and would kill that Lusion wash.
     bgPlane.visible = !(isWhiteTunnelActive && astronautDropRatio < 1)
 
+    // Exact Lusion GoalTunnelsBackground — Earth plate under the astronaut
+    // while the tablet window is open (hidden once blackFrameIn completes).
+    earthBgUniforms.u_bgColor.value.copy(bg)
+    const earthShow = THREE.MathUtils.clamp(blackFrameShowRatio, 0, 1)
+    const earthIn = THREE.MathUtils.clamp(blackFrameInRatio, 0, 1)
+    earthBgMesh.position.y = -(10 * (1 - earthShow) + 2.5 + 30 * earthIn)
+    earthBgMesh.scale.setScalar(fit(earthIn, 0, 0.5, 40, 70))
+    earthBgGroup.rotation.x = fit(earthIn, 0, 0.5, 0, -1)
+    earthBgMesh.visible = earthIn < 1 && !isWhiteTunnelActive && !isBlackTunnelActive
+
     // Header contrast only while tunnel sticky is pinned (not during goal copy)
     const header = document.getElementById('header')
     if (header) {
@@ -1166,7 +1225,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         : 1 - whiteFrameRatio
     // Window phase: oversize mixedFrameH so FOV tightens and astronaut fills the tablet
     const frameStart = windowed
-      ? Math.max(frameH * (isMobile ? 1.55 : 1.95), vhPx * (isMobile ? 0.62 : 0.82))
+      ? Math.max(frameH * (isMobile ? 1.75 : 2.25), vhPx * (isMobile ? 0.7 : 0.92))
       : frameH * (isMobile ? 0.72 : 0.55)
     const mixedFrameH = THREE.MathUtils.lerp(frameStart, vhPx, frameMix)
     const dist = DEFAULT_CAM.distanceTo(DEFAULT_LOOK)
@@ -1191,7 +1250,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         blackFrameInRatio,
         0,
         1,
-        windowed ? (isMobile ? -16 : -28) : isMobile ? 12 : 20,
+        windowed ? (isMobile ? -22 : -36) : isMobile ? 12 : 20,
         0
       )
       blackTunnelGroup.position.z = -80

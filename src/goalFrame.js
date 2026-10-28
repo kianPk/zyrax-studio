@@ -204,8 +204,9 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       document.body.style.background = ''
 
       if (bezel) {
-        // Bezel visible until expand swallows the frame
-        bezel.style.opacity = String(fit(E, 0.05, 0.75, 1, 0) * show)
+        // Keep bezel fully visible from the first frame (E=0). Starting the
+        // fade at 0.05 left a transparent shell and white page-gaps in the hole.
+        bezel.style.opacity = String(fit(E, 0, 0.75, 1, 0) * show)
         bezel.style.visibility = E > 0.92 ? 'hidden' : 'visible'
       }
       if (imgInOuter) imgInOuter.style.visibility = E > 0.98 ? 'hidden' : 'visible'

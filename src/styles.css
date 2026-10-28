@@ -1105,12 +1105,14 @@ button {
   line-height: 0.98;
   letter-spacing: -0.02em;
   font-weight: 500;
-  margin-top: 1.6em;
+  /* Keep title below fixed header so "Experiences" never covers ZYRAX */
+  margin-top: max(1.6em, calc(var(--header-size, 2rem) + 2.5rem));
   margin-bottom: 0.35em;
   left: -0.04em;
   width: min(11.5em, 92vw);
   will-change: transform;
   overflow: visible;
+  pointer-events: none;
 }
 .home-goal-title-line {
   display: block;
