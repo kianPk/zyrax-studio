@@ -261,12 +261,17 @@ if (!isMobile) {
 
 function splitWords(el, className = 'word') {
   if (!el) return
+  // Preserve marked name spans (e.g. .hero-name) before flattening text
+  const nameNodes = Array.from(el.querySelectorAll('.hero-name')).map((n) =>
+    n.textContent.trim()
+  )
   const text = el.textContent.trim()
   const words = text.split(/\s+/)
   el.textContent = ''
   words.forEach((word, i) => {
     const span = document.createElement('span')
     span.className = className
+    if (nameNodes.includes(word)) span.classList.add('hero-name')
     span.textContent = word
     span.style.transitionDelay = `${i * 35}ms`
     el.appendChild(span)
