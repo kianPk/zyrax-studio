@@ -4,7 +4,6 @@
 import * as THREE from 'three'
 import { SecondOrderDynamics } from './lusionMotion.js'
 import { clamp, fit, easeExpoOut, easeCubicInOut, getDomRange } from './scrollMath.js'
-import { createAnimatedCover, createCoverDepthTexture } from './featuredCovers.js'
 
 const PARALLAX_SAMPLES = 12
 const BLUR_SAMPLES = 6
@@ -201,7 +200,8 @@ export async function createFeaturedWebgl(projects) {
   window.addEventListener('pointermove', onMove, { passive: true })
 
   const sharedGeo = new THREE.PlaneGeometry(1, 1)
-  const sharedDepth = createCoverDepthTexture()
+  const loader = new THREE.TextureLoader()
+  const base = `${import.meta.env.BASE_URL}assets/projects/`
   const items = []
   const domItems = Array.from(list.querySelectorAll('.project-item'))
 
@@ -226,13 +226,33 @@ export async function createFeaturedWebgl(projects) {
       }
       const colorBg = new THREE.Color(dom.dataset.colorBg || '#111111')
 
-      const cover = createAnimatedCover({
-        id,
-        colorBg: dom.dataset.colorBg || project.colorBg,
-        colorText: dom.dataset.colorText || project.colorText,
-      })
-      // seed first frame
-      cover.update(index * 0.37)
+      let colorMap
+      let depthMap
+      try {
+        ;[colorMap, depthMap] = await Promise.all([
+          loader.loadAsync(`${base}${id}/home.webp`),
+          loader.loadAsync(`${base}${id}/home_depth.webp`),
+        ])
+      } catch (err) {
+        console.warn('Featured cover failed for', id, err)
+        if (imgEl) imgEl.style.opacity = '1'
+        return
+      }
+      colorMap.colorSpace = THREE.SRGBColorSpace
+      colorMap.wrapS = colorMap.wrapT = THREE.ClampToEdgeWrapping
+      colorMap.minFilter = THREE.LinearFilter
+      colorMap.magFilter = THREE.LinearFilter
+      colorMap.generateMipmaps = false
+      depthMap.colorSpace = THREE.NoColorSpace
+      depthMap.wrapS = depthMap.wrapT = THREE.ClampToEdgeWrapping
+      depthMap.minFilter = THREE.LinearFilter
+      depthMap.magFilter = THREE.LinearFilter
+      depthMap.generateMipmaps = false
+
+      const texSize = new THREE.Vector2(
+        colorMap.image?.width || 1280,
+        colorMap.image?.height || 832
+      )
 
       const focusPos = new THREE.Vector3(0, 0, -1)
       const focusDyn = new SecondOrderDynamics(new THREE.Vector3(), 1, 0.6, 2)
@@ -242,12 +262,12 @@ export async function createFeaturedWebgl(projects) {
       const shiftXYTarget = new THREE.Vector2()
 
       const uniforms = {
-        u_texture: { value: cover.texture },
-        u_depthTexture: { value: sharedDepth },
+        u_texture: { value: colorMap },
+        u_depthTexture: { value: depthMap },
         u_colorBg: { value: colorBg },
         u_showRatio: { value: 0 },
         u_activeRatio: { value: 0 },
-        u_textureSize: { value: cover.size.clone() },
+        u_textureSize: { value: texSize },
         u_domWH: { value: new THREE.Vector2(1, 1) },
         u_shiftXY: { value: shiftXY },
         u_focusPos: { value: focusPos },
@@ -312,7 +332,8 @@ export async function createFeaturedWebgl(projects) {
         id,
         mesh,
         uniforms,
-        cover,
+        colorMap,
+        depthMap,
         focusDyn,
         focusPos,
         zoomDyn,
@@ -338,7 +359,6 @@ export async function createFeaturedWebgl(projects) {
             return
           }
           showTime += dt
-          cover.update(time + index)
 
           const rect = main.getBoundingClientRect()
           let w = Math.max(1, rect.width)
@@ -530,18 +550,9 @@ export async function createFeaturedWebgl(projects) {
           const url = pendingUrl
           // brief hold on full zoom then navigate
           setTimeout(() => {
-            if (url) window.open(url, '_blank', 'noopener,noreferrer')
-            // soft reset so returning to tab isn't stuck zoomed
-            setTimeout(() => {
-              opening = false
-              selectedId = null
-              pendingUrl = null
-              openProgress = 0
-              listZoom = 0
-              baseLayout.clear()
-              freezeScroll(false)
-            }, 400)
-          }, 180)
+            // Enter the demo in-place after the Lusion zoom dive
+            if (url) window.location.assign(url)
+          }, 120)
         }
       }
 
@@ -563,10 +574,10 @@ export async function createFeaturedWebgl(projects) {
       window.removeEventListener('resize', resize)
       document.documentElement.classList.remove('has-featured-webgl', 'featured-opening')
       items.forEach((it) => {
-        it.cover?.dispose()
+        it.colorMap?.dispose()
+        it.depthMap?.dispose()
         it.mesh.material.dispose()
       })
-      sharedDepth.dispose()
       sharedGeo.dispose()
       renderer.dispose()
       canvas.remove()

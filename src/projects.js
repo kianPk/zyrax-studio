@@ -55,8 +55,8 @@ export const projects = [
     title: 'Hexsweep',
     tags: 'web • svg • puzzle • game',
     url: 'https://kianpk.github.io/hexsweep/',
-    colorBg: '#101018',
-    colorText: '#e4e8ff',
+    colorBg: '#e8f2ee',
+    colorText: '#0a3d32',
   },
   {
     id: 'brickforge',
