@@ -8,6 +8,7 @@ import {
   easeCubicInOut,
   easeExpoIn,
   easeSineIn,
+  easeSineOut,
   easeBackInOut,
   easeQuartIn,
   smoothstep,
@@ -228,7 +229,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   try {
     renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !isMobile,
+      // Mobile AA on — without it helmet/arches stair-step badly at DPR≤1.5
+      antialias: true,
       alpha: false,
       powerPreference: 'high-performance',
       failIfMajorPerformanceCaveat: false,
@@ -238,9 +240,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     throw err
   }
   renderer.setClearColor(0x000000, 1)
-  // Mobile needs a bit more than 1x or astronaut reads as soft/grainy vs Lusion
-  // Mobile: DPR 1 — Stage3D bloom pyramid is expensive; smoothness > retina
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 1.35))
+  // Mobile: up to 2× for suit/visor; bloom pyramid stays half-res separately
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 2 : 1.5))
   // Lusion Stage3D writes display-referred colors in custom shaders with no
   // Linear→sRGB pass. Keep output linear so the entry suit isn't crushed.
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace
@@ -594,9 +595,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     for (let i = 0; i < BLOCK_COUNT; i++) ids[i] = i
     ig.setAttribute('a_instanceId', new THREE.InstancedBufferAttribute(ids, 1))
     ig.instanceCount = BLOCK_COUNT
-    // Frag writes low alpha on white pattern so it composites over white clear —
-    // that high-key wash is what keeps cobalt in the crevices (Lusion look).
-    // Keep depthWrite so stacked blocks don't ghost into a flat blue field.
+    // Lusion GoalWhiteTunnel: opaque ShaderMaterial (no transparent flag).
+    // Alpha is still written for Stage3D bloom; opaque blending avoids the
+    // washed/glitchy blue arches from blending with white clear.
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         u_texture: { value: blockTex },
@@ -607,7 +608,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       },
       vertexShader: whiteTunnelVert,
       fragmentShader: whiteTunnelFrag,
-      transparent: true,
+      transparent: false,
       depthWrite: true,
       depthTest: true,
       extensions: { derivatives: true },
@@ -907,10 +908,15 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     // Prefer the screen clip while tablet-windowed so the drawing buffer
     // matches the visible hole (not the full device shell including bezel).
     const clip = stickyEl?.querySelector?.('[data-goal-screen-clip]')
-    const sizeEl =
-      stickyEl?.classList.contains('is-windowed') && clip ? clip : stickyEl
-    const w = sizeEl?.clientWidth || window.innerWidth
-    const h = sizeEl?.clientHeight || window.innerHeight
+    const windowed = stickyEl?.classList.contains('is-windowed')
+    const sizeEl = windowed && clip ? clip : stickyEl
+    let w = sizeEl?.clientWidth || window.innerWidth
+    let h = sizeEl?.clientHeight || window.innerHeight
+    // Mobile full-bleed: use visualViewport so the tunnel fills the real screen
+    if (!windowed && isMobile && window.visualViewport) {
+      w = Math.round(window.visualViewport.width) || w
+      h = Math.round(window.visualViewport.height) || h
+    }
     camera.aspect = w / Math.max(h, 1)
     applyCamera()
     renderer.setSize(w, h, false)
@@ -1012,10 +1018,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     baseMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
     wallMat.uniforms.u_ratioInverse.value = 1 - whiteTunnelRatio
 
-    // White tunnel: lift ambient so quilted suit + cyan rim read against bloom
-    // (Linear canvas midtones otherwise crush to silhouette vs Lusion display path)
+    // Keep Lusion ambient — extra lift washed the quilt into a flat blob under bloom
     sharedUniforms.u_ambientColor.value.set(
-      isWhiteTunnelActive && astronautDropRatio < 1 ? '#9eb4c8' : '#566d80'
+      isWhiteTunnelActive && astronautDropRatio < 1 ? '#6a7f94' : '#566d80'
     )
 
     // phase colors — Lusion clearAlpha:0 on black; white tunnel opaque white
@@ -1149,7 +1154,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
 
     if (isWhiteTunnelActive) {
       // Lusion GoalWhiteTunnel: only dolly-zoom offset — FOV comes from frameHeight mix above
-      cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, isMobile ? 36 : 60, 0)
+      // Exact Lusion GoalWhiteTunnel: fit(whiteTunnelRatio, 0, 1, 60, 0) on all devices
+      cameraDollyZoomFovOffset = fit(whiteTunnelRatio, 0, 1, 60, 0)
     } else if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *
@@ -1325,19 +1331,20 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     // Lusion GoalWhiteTunnel.update — efx from ratio delta, fade amount near end
     let dRatio = whiteTunnelRatio - prevWhiteRatio
     if (Math.abs(dRatio) > 0.08) dRatio = 0
-    const efxScale = isMobile ? 0.4 : 1
+    // Exact Lusion GoalWhiteTunnel efx: sineOut fits, full amount on desktop
+    const efxScale = isMobile ? 0.35 : 1
     const zOff = THREE.MathUtils.clamp(
-      -dRatio * fit(whiteTunnelRatio, 0, 0.9, 500, 0, easeSineIn) * efxScale,
+      -dRatio * fit(whiteTunnelRatio, 0, 0.9, 500, 0, easeSineOut) * efxScale,
       -1,
       1
     )
     const rotOff = THREE.MathUtils.clamp(
-      -dRatio * fit(whiteTunnelRatio, 0, 0.8, 45, 0, easeSineIn) * efxScale,
+      -dRatio * fit(whiteTunnelRatio, 0, 0.8, 45, 0, easeSineOut) * efxScale,
       -1,
       1
     )
     post.setEfxOffset(zOff, rotOff)
-    post.setEfxAmount(fit(whiteTunnelRatio, 0.75, 1, 1, 0) * (isMobile ? 0.5 : 1))
+    post.setEfxAmount(fit(whiteTunnelRatio, 0.75, 1, 1, 0) * (isMobile ? 0.4 : 1))
     prevWhiteRatio = whiteTunnelRatio
 
     const bgHex =

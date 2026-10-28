@@ -16,12 +16,16 @@ import { createGoalRanges } from './scrollRanges.js'
 const isMobile =
   /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
 
-// Match Lusion --vh
+// Match Lusion --vh — use visualViewport on mobile so address-bar show/hide
+// doesn't leave 100vh gaps / clipped sticky tunnels.
 const setVh = () => {
-  document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`)
+  const h = window.visualViewport?.height || window.innerHeight
+  document.documentElement.style.setProperty('--vh', `${h * 0.01}px`)
 }
 setVh()
 window.addEventListener('resize', setVh)
+window.visualViewport?.addEventListener('resize', setVh)
+window.visualViewport?.addEventListener('scroll', setVh)
 
 // Softer wheel than default Lenis — closer to Lusion ScrollPane (wheelEaseCoeff 12)
 // Mobile: shorter duration + native-ish touch to cut scroll jank vs multi-WebGL load
@@ -117,22 +121,24 @@ gsap.ticker.add((time) => {
   const dt = Math.min(0.05, (now - lastTick) / 1000)
   lastTick = now
 
-  // Lusion GoalTunnels autoScroll — keeps tunnel cinematic when wheel stops
-  if (goalTunnel?.getAutoScrollSpeed) {
-    goalAutoScrollSpeed = goalTunnel.getAutoScrollSpeed()
-  }
-  const wheelIdle = now - lastWheelTime > 80
-  if (wheelIdle && Math.abs(goalAutoScrollSpeed) > 0.01) {
-    goalSkipAutoScroll = false
-  }
-  goalAutoScrollRatio += Math.abs(goalAutoScrollSpeed) > 0 && !goalSkipAutoScroll ? dt : -1
-  goalAutoScrollRatio = Math.max(0, Math.min(1, goalAutoScrollRatio))
-  if (!goalSkipAutoScroll && goalAutoScrollRatio > 0 && Math.abs(goalAutoScrollSpeed) > 0.01) {
-    const vh = window.innerHeight
-    // Soften vs raw Lusion 2.5 vh/s — still cinematic, less runaway
-    const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio * 0.55
-    const next = (lenis.animatedScroll ?? lenis.scroll ?? window.scrollY) + deltaPx
-    lenis.scrollTo(next, { immediate: true, force: true })
+  // Lusion GoalTunnels autoScroll — desktop only. On mobile it fights touch
+  // scrolling and feels like the page is "buggy"/hijacked.
+  if (!isMobile) {
+    if (goalTunnel?.getAutoScrollSpeed) {
+      goalAutoScrollSpeed = goalTunnel.getAutoScrollSpeed()
+    }
+    const wheelIdle = now - lastWheelTime > 80
+    if (wheelIdle && Math.abs(goalAutoScrollSpeed) > 0.01) {
+      goalSkipAutoScroll = false
+    }
+    goalAutoScrollRatio += Math.abs(goalAutoScrollSpeed) > 0 && !goalSkipAutoScroll ? dt : -1
+    goalAutoScrollRatio = Math.max(0, Math.min(1, goalAutoScrollRatio))
+    if (!goalSkipAutoScroll && goalAutoScrollRatio > 0 && Math.abs(goalAutoScrollSpeed) > 0.01) {
+      const vh = window.innerHeight
+      const deltaPx = goalAutoScrollSpeed * vh * dt * goalAutoScrollRatio * 0.55
+      const next = (lenis.animatedScroll ?? lenis.scroll ?? window.scrollY) + deltaPx
+      lenis.scrollTo(next, { immediate: true, force: true })
+    }
   }
 
   lenis.raf(time * 1000)

@@ -294,6 +294,7 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
   let enabled = true
   let w = 1
   let h = 1
+  let whiteBloomDamp = 1
 
   const dirX = new THREE.Vector2(1, 0)
   const dirY = new THREE.Vector2(0, 1)
@@ -314,7 +315,9 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     w = Math.max(1, Math.floor(nw))
     h = Math.max(1, Math.floor(nh))
     // Mobile: half-res scene + efx buffers — biggest GPU win for scroll smoothness
-    const sceneScale = isMobileBloom ? 0.5 : 1
+    // Mobile: keep scene near full-res so astronaut suit stays sharp; bloom pyramid
+    // still starts at half-res below. Half-res scene was the main "بی‌کیفیت" culprit.
+    const sceneScale = isMobileBloom ? 0.85 : 1
     sceneRT.setSize(Math.max(1, Math.floor(w * sceneScale)), Math.max(1, Math.floor(h * sceneScale)))
     glassBgRT.setSize(sceneRT.width, sceneRT.height)
     efxRT.setSize(sceneRT.width, sceneRT.height)
@@ -383,15 +386,13 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
         : 1
 
     if (isWhiteTunnelActive) {
-      // Exact Lusion GoalTunnels.syncProperties white bloom:
-      // fit(whiteFrameRatio, 0, .05, 4, 2) → settles at 2 so cobalt crevices stay readable
-      // wait: fit(whiteTunnelWaitRatio, 0, .1, 0, 20); clearAlpha fit(0..0.1, 0.3→0)
-      const waitBloomPeak = isMobile ? 10 : 20
+      // Exact Lusion: fit(whiteFrameRatio, 0, .05, 4, 2) then wait peak 20
+      // Our gaussian bloom reads hotter than Lusion FFT — keep curve but damp weights below
+      const waitBloomPeak = isMobile ? 8 : 16
       bloomAmount =
         astronautDropRatio < 1
           ? THREE.MathUtils.lerp(
-              // Soften Lusion's opening 4 so suit detail survives SwiftShader/desktop bloom
-              isMobile ? 3.2 : 3.4,
+              4,
               2,
               THREE.MathUtils.clamp(whiteFrameRatio / 0.05, 0, 1)
             )
@@ -400,12 +401,19 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
               waitBloomPeak,
               THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
             )
+      // Opaque white-tunnel needs enough bloom for the high-key wash Lusion gets
+      // from FFT, without re-crushing the suit into a silhouette.
+      bloomRadius = isMobile ? 0.28 : 0.42
+      highPassMultiplier = isMobile ? 0.95 : 1.0
+      whiteBloomDamp = isMobile ? 0.55 : 0.72
+      // Slightly higher clearAlpha so white fills gaps between blocks
       clearAlpha = THREE.MathUtils.lerp(
-        0.3,
+        0.45,
         0,
         THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
       )
     } else {
+      whiteBloomDamp = 1
       // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel
       const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
       bloomAmount = THREE.MathUtils.lerp(isMobile ? 22 : 30, isMobile ? 5 : 6, t)
@@ -579,9 +587,10 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
       const convAmount = (bloomAmount * 1024) / Math.pow(fftBase, 4) * 0.85
       // Gaussian dissipates differently than the FFT star kernel — gain keeps a
       // visible soft halo/glint without the blown shoulder bloom.
-      // Soft lift toward Lusion FFT bloom without the old gaussian washout.
-      // Slightly stronger so entry suit aura + ring read like the FFT star kernel.
-      amountForWeights = convAmount * 48
+      // White tunnel needs much less gain or the corridor washes to pure white.
+      amountForWeights = convAmount * 48 * whiteBloomDamp
+    } else {
+      amountForWeights *= whiteBloomDamp
     }
     for (let u = 0; u < ITERATION; u++) {
       if (u >= bloomIters) {

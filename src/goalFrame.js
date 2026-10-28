@@ -143,8 +143,11 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     if (screenClip) {
       screenClip.style.left = '0'
       screenClip.style.top = '0'
+      screenClip.style.right = '0'
+      screenClip.style.bottom = '0'
       screenClip.style.width = '100%'
       screenClip.style.height = '100%'
+      screenClip.style.inset = '0'
       screenClip.style.borderRadius = '0'
       screenClip.style.background = ''
     }
