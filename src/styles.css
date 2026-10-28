@@ -1083,11 +1083,12 @@ button {
   font-size: clamp(0.875rem, 1vw, 2rem);
 }
 #home-goal-context {
+  /* Exact Lusion: no extra section padding — title margin handles spacing */
   position: relative;
   z-index: 3;
   grid-column: 1 / span 12;
   color: var(--color-black);
-  padding: clamp(80px, 12vw, 180px) var(--base-padding-x) clamp(60px, 8vw, 120px);
+  padding: 0 var(--base-padding-x);
 }
 #home-goal-context-inner {
   position: relative;
@@ -1101,15 +1102,15 @@ button {
   position: relative;
   z-index: 2;
   grid-column: 1 / span 12;
-  font-size: clamp(2.6rem, 7.2vw, 7.5rem);
-  line-height: 0.98;
-  letter-spacing: -0.02em;
+  font-size: clamp(2.6rem, 8vw, 7.5rem);
+  line-height: 1;
+  letter-spacing: -0.01em;
   font-weight: 500;
-  /* Keep title below fixed header so "Experiences" never covers ZYRAX */
-  margin-top: max(1.6em, calc(var(--header-size, 2rem) + 2.5rem));
-  margin-bottom: 0.35em;
-  left: -0.04em;
-  width: min(11.5em, 92vw);
+  /* Lusion margin-top: 2.2em */
+  margin-top: 2.2em;
+  margin-bottom: 0.5em;
+  left: -0.068em;
+  width: min(11em, 92vw);
   will-change: transform;
   overflow: visible;
   pointer-events: none;
@@ -1170,6 +1171,8 @@ button {
   background: #000;
 }
 #home-goal-image-out-outer {
+  /* Collapsed in layout — scrollRanges recovers intrinsic height for
+     astronautDrop pixels. Full-viewport window overlay covers any gap. */
   position: relative;
   grid-column: 2 / 12;
   pointer-events: none;
@@ -1213,20 +1216,22 @@ button {
   margin-top: 1em;
 }
 #home-goal-tunnel-sticky.is-windowed {
-  /* Framed inside tablet — not full-bleed yet */
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
-  /* Keep black under the bezel hole (was transparent → white page bleed) */
-  background: #000 !important;
+  /* Full-viewport overlay like Lusion #canvas — transparent so the
+     off-white page + cyan line + copy stay visible around the tablet. */
+  box-shadow: none;
+  background: transparent !important;
 }
 html.is-goal-window,
 html.is-goal-window body {
   background: var(--color-off-white) !important;
 }
 #home-goal-tunnel-sticky {
-  /* Lenis breaks CSS sticky — pin via JS (position:fixed) while section is active */
+  /* No document height until pinned — Lusion canvas is position:fixed.
+     Windowed mode sizes via JS over the tablet; a permanent 100vh here
+     created a white void under the tablet entry. */
   position: relative;
   top: 0;
-  height: calc(var(--vh, 1vh) * 100);
+  height: 0;
   width: 100%;
   overflow: hidden;
   background: #000000;
@@ -1610,7 +1615,7 @@ html.is-goal-window body {
   }
   #home-goal-context {
     grid-column: 1 / span 12;
-    padding-top: calc(var(--base-padding-y) + var(--header-size) * 1.5);
+    padding: 0 var(--base-padding-x);
   }
   #home-goal-context-inner {
     grid-template-columns: repeat(6, minmax(0, 1fr));

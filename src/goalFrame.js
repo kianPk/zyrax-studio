@@ -1,7 +1,10 @@
 /**
  * Lusion GoalSection tablet/desktop window framing.
- * Astronaut lives inside the device screen (#home-goal-image-in hole)
- * with a bezel overlay; blackFrameIn expands that window to full viewport.
+ *
+ * Like Lusion's fixed #canvas: during the window phase the sticky is a
+ * full-viewport overlay. The bezel + screen-clip track the DOM tablet and
+ * expand to fullscreen with blackFrameIn — so scrolling never leaves a
+ * half-page white void under a small fixed tablet shell.
  */
 import { fit, clamp } from './scrollMath.js'
 
@@ -25,20 +28,17 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
   // Screen hole inset relative to full tablet (matches CSS #home-goal-image-in)
   const HOLE = { left: 0.039, top: 0.054, width: 0.925, height: 0.895 }
 
-  // Inner clip for the WebGL canvas — only the screen area
   let screenClip = stickyEl.querySelector('[data-goal-screen-clip]')
   if (!screenClip) {
     screenClip = document.createElement('div')
     screenClip.setAttribute('data-goal-screen-clip', '')
     screenClip.style.cssText =
       'position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden;border-radius:inherit;z-index:1;background:#000;'
-    // Move existing canvas + title into the clip so bezel sits above the canvas
     const kids = Array.from(stickyEl.childNodes)
     stickyEl.appendChild(screenClip)
     kids.forEach((n) => screenClip.appendChild(n))
   }
 
-  // Bezel overlay — full device PNG with transparent screen + outside
   let bezel = stickyEl.querySelector('#home-goal-frame-bezel')
   if (!bezel) {
     bezel = document.createElement('img')
@@ -48,7 +48,6 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     bezel.decoding = 'async'
     stickyEl.appendChild(bezel)
   }
-  // Context window always uses the landscape tablet shell (Lusion image-in)
   const syncBezelSrc = () => {
     const next = `${base}assets/textures/tunnels/tablet_bezel.png`
     if (bezel.getAttribute('src') !== next) bezel.src = next
@@ -58,7 +57,6 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
   let lastMode = ''
   let frameRect = null
 
-  // Preserve layout height while sticky is position:fixed over the tablet
   let flowSpacer = stickyEl.parentElement?.querySelector('[data-goal-flow-spacer]')
   if (!flowSpacer && stickyEl.parentElement) {
     flowSpacer = document.createElement('div')
@@ -71,7 +69,6 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
   }
 
   const deviceRectFromAnchor = () => {
-    // Prefer full device shell (inner); fall back to screen hole
     const el = imgInInner || imgIn
     if (!el) return null
     const r = el.getBoundingClientRect()
@@ -79,50 +76,67 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     return { left: r.left, top: r.top, width: r.width, height: r.height }
   }
 
-  const applyStickyToRect = (rect, rotateRad = 0) => {
-    if (!rect) return
+  /** Full-viewport overlay; bezel + clip track the (expanding) device rect. */
+  const applyWindowOverlay = (device, rotateRad = 0, holeCollapse = 0) => {
+    if (!device) return
     stickyEl.classList.add('is-windowed')
     stickyEl.classList.remove('is-pinned')
-    const layoutH = window.innerHeight
-    if (flowSpacer) flowSpacer.style.height = `${layoutH}px`
+    if (flowSpacer) flowSpacer.style.height = '0px'
+
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+
+    // Sticky always covers the viewport (Lusion #canvas) so page content
+    // scrolling under the goal never flashes a white half-page void.
     stickyEl.style.position = 'fixed'
-    stickyEl.style.left = `${rect.left}px`
-    stickyEl.style.top = `${rect.top}px`
-    stickyEl.style.width = `${rect.width}px`
-    stickyEl.style.height = `${rect.height}px`
+    stickyEl.style.left = '0px'
+    stickyEl.style.top = '0px'
+    stickyEl.style.width = `${vw}px`
+    stickyEl.style.height = `${vh}px`
     stickyEl.style.right = 'auto'
     stickyEl.style.bottom = 'auto'
-    stickyEl.style.borderRadius = `${Math.min(rect.width, rect.height) * 0.055}px`
+    stickyEl.style.borderRadius = '0'
     stickyEl.style.overflow = 'hidden'
     stickyEl.style.zIndex = '3'
-    stickyEl.style.transform = rotateRad ? `rotate(${rotateRad}rad)` : 'none'
-    // Black underlay so any sub-pixel miss of the screen clip never flashes page white
-    stickyEl.style.background = '#000'
-    stickyEl.style.boxShadow = '0 18px 60px rgba(0,0,0,0.28)'
+    stickyEl.style.transform = 'none'
+    stickyEl.style.background = 'transparent'
+    stickyEl.style.boxShadow = 'none'
 
-    // Canvas only fills the screen hole; bezel covers the rest.
-    // IMPORTANT: set inset unset FIRST — assigning inset='' after left/top
-    // clears those longhands and the stylesheet `inset:0` snaps the clip to
-    // the top-left, leaving white page-bg gaps on the right/bottom of the hole.
+    const E = clamp(holeCollapse, 0, 1)
+    // Hole inset collapses toward full viewport as E → 1
+    const holeLeft = device.left + device.width * HOLE.left * (1 - E)
+    const holeTop = device.top + device.height * HOLE.top * (1 - E)
+    const holeW = device.width * HOLE.width + (vw - device.width * HOLE.width) * E
+    const holeH = device.height * HOLE.height + (vh - device.height * HOLE.height) * E
+
     if (screenClip) {
       screenClip.style.inset = 'unset'
-      screenClip.style.left = `${HOLE.left * 100}%`
-      screenClip.style.top = `${HOLE.top * 100}%`
+      screenClip.style.left = `${holeLeft}px`
+      screenClip.style.top = `${holeTop}px`
       screenClip.style.right = 'auto'
       screenClip.style.bottom = 'auto'
-      screenClip.style.width = `${HOLE.width * 100}%`
-      screenClip.style.height = `${HOLE.height * 100}%`
-      screenClip.style.borderRadius = `${Math.min(rect.width, rect.height) * 0.03}px`
+      screenClip.style.width = `${Math.max(1, holeW)}px`
+      screenClip.style.height = `${Math.max(1, holeH)}px`
+      screenClip.style.borderRadius =
+        E > 0.85 ? '0px' : `${Math.min(device.width, device.height) * 0.03 * (1 - E)}px`
       screenClip.style.background = '#000'
+      screenClip.style.transform = rotateRad ? `rotate(${rotateRad}rad)` : 'none'
+      screenClip.style.transformOrigin = 'center center'
     }
+
     if (bezel) {
       bezel.style.position = 'absolute'
-      bezel.style.inset = '0'
-      bezel.style.width = '100%'
-      bezel.style.height = '100%'
+      bezel.style.inset = 'unset'
+      bezel.style.left = `${device.left}px`
+      bezel.style.top = `${device.top}px`
+      bezel.style.width = `${device.width}px`
+      bezel.style.height = `${device.height}px`
       bezel.style.objectFit = 'fill'
       bezel.style.zIndex = '6'
       bezel.style.pointerEvents = 'none'
+      bezel.style.transform = rotateRad ? `rotate(${rotateRad}rad)` : 'none'
+      bezel.style.transformOrigin = 'center center'
+      bezel.style.boxShadow = '0 18px 60px rgba(0,0,0,0.28)'
     }
   }
 
@@ -154,10 +168,13 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       screenClip.style.inset = '0'
       screenClip.style.borderRadius = '0'
       screenClip.style.background = ''
+      screenClip.style.transform = ''
     }
     if (bezel) {
       bezel.style.opacity = '0'
       bezel.style.visibility = 'hidden'
+      bezel.style.transform = ''
+      bezel.style.boxShadow = ''
     }
     scrollLines?.setGoalFrame?.({ active: false })
   }
@@ -169,43 +186,44 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     const whiteTunnel = ranges.between('whiteTunnel', 'whiteFrameOut').ratio
     const sectionRect = sectionEl.getBoundingClientRect()
     const vh = window.innerHeight
+    const vw = window.innerWidth
     const inView = sectionRect.bottom > 0 && sectionRect.top < vh
 
     frameRect = deviceRectFromAnchor()
 
-    // Window phase: framed device until blackFrameIn completes
     const inWindowPhase =
       inView && blackTunnel < 0.02 && whiteTunnel < 0.01 && blackFrameIn < 0.999
 
     if (inWindowPhase && frameRect) {
-      const E = clamp(blackFrameIn, 0, 1)
-      const vw = window.innerWidth
+      let E = clamp(blackFrameIn, 0, 1)
+      // Catch up expand as the DOM tablet rises — keeps the framed scene filling
+      // the viewport instead of a cut-off tablet over a half-page white void.
+      if (frameRect.top < vh * 0.4) {
+        const catchUp = clamp((vh * 0.4 - frameRect.top) / (vh * 0.65), 0, 1)
+        E = Math.max(E, fit(catchUp, 0, 1, 0, 1))
+      }
+
       const full = { left: 0, top: 0, width: vw, height: vh }
-      // Expand device rect toward fullscreen
-      const rect = {
+      const device = {
         left: frameRect.left + (full.left - frameRect.left) * E,
         top: frameRect.top + (full.top - frameRect.top) * E,
         width: frameRect.width + (full.width - frameRect.width) * E,
         height: frameRect.height + (full.height - frameRect.height) * E,
       }
       const rotate = fit(E, 0, 1, 0, 0.35) * (1 - E)
-      applyStickyToRect(rect, rotate)
+      applyWindowOverlay(device, rotate, E)
 
-      // Reveal as soon as context is on screen; blackFrameShow only softens early entry
       const show = Math.max(
         fit(blackFrameShow, 0, 0.2, 0.35, 1),
         sectionRect.top < vh * 0.85 ? 1 : 0
       )
       stickyEl.style.opacity = String(show)
       stickyEl.style.pointerEvents = 'none'
-      // Keep Lusion light page behind the tablet (tunnel must not paint body black)
       document.documentElement.classList.add('is-goal-window')
       document.documentElement.style.background = ''
       document.body.style.background = ''
 
       if (bezel) {
-        // Keep bezel fully visible from the first frame (E=0). Starting the
-        // fade at 0.05 left a transparent shell and white page-gaps in the hole.
         bezel.style.opacity = String(fit(E, 0, 0.75, 1, 0) * show)
         bezel.style.visibility = E > 0.92 ? 'hidden' : 'visible'
       }
@@ -225,7 +243,6 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
         textsEl.style.transform = 'translateY(-50%)'
       }
 
-      // Drive cyan goal line with the same expand (Lusion frame transform)
       if (scrollLines?.setGoalFrame) {
         scrollLines.setGoalFrame({
           active: E > 0.01,
@@ -234,26 +251,11 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
         })
       }
 
-      // As expand progresses, hole inset collapses to full sticky
-      if (screenClip && E > 0.01) {
-        const l = HOLE.left * (1 - E)
-        const t = HOLE.top * (1 - E)
-        const w = HOLE.width + (1 - HOLE.width) * E
-        const h = HOLE.height + (1 - HOLE.height) * E
-        screenClip.style.inset = 'unset'
-        screenClip.style.left = `${l * 100}%`
-        screenClip.style.top = `${t * 100}%`
-        screenClip.style.right = 'auto'
-        screenClip.style.bottom = 'auto'
-        screenClip.style.width = `${w * 100}%`
-        screenClip.style.height = `${h * 100}%`
-      }
-
       if (lastMode !== 'window') {
         lastMode = 'window'
         window.dispatchEvent(new Event('resize'))
       }
-      return { mode: 'window', blackFrameIn, blackFrameShow, frameRect }
+      return { mode: 'window', blackFrameIn: E, blackFrameShow, frameRect }
     }
 
     if (lastMode === 'window') {
