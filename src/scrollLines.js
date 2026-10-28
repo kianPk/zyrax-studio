@@ -166,21 +166,23 @@ export async function createScrollLines() {
   camera.position.set(0, 0, 1)
   camera.lookAt(0, 0, 0)
 
+  const isMobileLines =
+    /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
   let renderer
   try {
     renderer = new THREE.WebGLRenderer({
       canvas,
       alpha: true,
-      antialias: true,
+      // Mobile: AA costs a full extra resolve on a second context — soft edge is in the shader
+      antialias: !isMobileLines,
       premultipliedAlpha: false,
+      powerPreference: isMobileLines ? 'low-power' : 'default',
     })
   } catch (err) {
     console.error('Lines WebGL unavailable', err)
-    return { update() {}, resize() {}, destroy() {} }
+    return { update() {}, resize() {}, destroy() {}, setPaused() {} }
   }
   renderer.setClearColor(0x000000, 0)
-  const isMobileLines =
-    /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 812
   // Mobile: keep lines but cap DPR — 2x + 4 WebGL contexts was the main lag source
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobileLines ? 1 : 1.5))
   renderer.autoClear = true
@@ -190,6 +192,12 @@ export async function createScrollLines() {
   const _v1 = new THREE.Vector3()
   const _box = new THREE.Box3()
   const _aspect = new THREE.Vector2()
+  const _frameM = new THREE.Matrix4()
+  const _frameMr = new THREE.Matrix4()
+  const _frameMs = new THREE.Matrix4()
+  const _frameMt = new THREE.Matrix4()
+  let paused = false
+  let lastHadVisible = true
 
   for (let i = 0; i < LINES.length; i++) {
     const data = LINES[i]
@@ -326,7 +334,9 @@ export async function createScrollLines() {
 
     // Smooth draw-on — kills stair-step feel when Lenis eases
     if (line._showSmooth == null) line._showSmooth = a
-    line._showSmooth += (a - line._showSmooth) * 0.18
+    // Mobile: snappier lerp so fewer frames of "chasing" GPU work
+    line._showSmooth += (a - line._showSmooth) * (mobile ? 0.32 : 0.18)
+    line._targetA = a
     mat.uniforms.u_showRatio.value = line._showSmooth
     mat.uniforms.u_radius.value = radius
 
@@ -344,27 +354,33 @@ export async function createScrollLines() {
     _box.max.copy(data.boxMax)
     _box.applyMatrix4(inner.matrixWorld)
     container.visible =
-      !hideForTunnel && _box.max.y > -h && _box.min.y < 0 && a > 0.001
+      !hideForTunnel && _box.max.y > -h && _box.min.y < 0 && line._showSmooth > 0.001
 
-    // End-cap at reveal tip
-    let v = 0
-    let blend = 0
-    for (let r = 0; r < count; r++) {
-      if (a >= lineRatioArray[r]) {
-        v = r
-        if (r === count - 1) blend = 0
-        else blend = (a - lineRatioArray[r]) / (lineRatioArray[r + 1] - lineRatioArray[r] || 1)
-      }
+    if (!container.visible) return
+
+    // End-cap at reveal tip — binary search (was O(n) per line per frame)
+    const tip = line._showSmooth
+    let lo = 0
+    let hi = count - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (lineRatioArray[mid] <= tip) lo = mid
+      else hi = mid - 1
     }
-    const T = v
-    const M = Math.min(v + 1, count - 1)
-    _v0.fromArray(cpAttr.array, v * 3)
+    const T = lo
+    const M = Math.min(T + 1, count - 1)
+    let blend = 0
+    if (T < count - 1) {
+      const d = lineRatioArray[M] - lineRatioArray[T] || 1
+      blend = (tip - lineRatioArray[T]) / d
+    }
+    _v0.fromArray(cpAttr.array, T * 3)
     _v1.fromArray(cpAttr.array, M * 3)
     _v0.lerp(_v1, blend)
     const cdArr = cdAttr.array
     let b = cdArr[T] * (1 - blend) + cdArr[M] * blend
     b = 0.9 + 0.1 * b
-    const C = saturate((a - (data.aoThreshold - 0.02)) / 0.04)
+    const C = saturate((tip - (data.aoThreshold - 0.02)) / 0.04)
     circle.position.copy(_v0)
     circle.scale.set(radius, radius, 1)
     circleMat.uniforms.u_ao.value = Math.min(1, b + 1 - C)
@@ -374,8 +390,28 @@ export async function createScrollLines() {
   }
 
   const update = () => {
-    for (const line of lines) updateLine(line)
-    renderer.render(scene, camera)
+    if (paused) {
+      if (lastHadVisible) {
+        for (const line of lines) line.container.visible = false
+        renderer.clear()
+        lastHadVisible = false
+      }
+      return
+    }
+    let anyVisible = false
+    let stillSmoothing = false
+    for (const line of lines) {
+      updateLine(line)
+      if (line.container.visible) anyVisible = true
+      const target = line._targetA ?? 0
+      const smooth = line._showSmooth ?? 0
+      if (Math.abs(target - smooth) > 0.0008) stillSmoothing = true
+    }
+    // Skip GPU submit when nothing to draw and draw-on is settled
+    if (anyVisible || stillSmoothing || lastHadVisible) {
+      renderer.render(scene, camera)
+    }
+    lastHadVisible = anyVisible || stillSmoothing
   }
 
   update()
@@ -400,13 +436,25 @@ export async function createScrollLines() {
       const cx = w * 0.5
       const cy = -h * 0.5
       // translate(cx,cy) * rotate(z,-rot) * scale * translate(-cx,-cy)
-      const m = new THREE.Matrix4()
-      m.makeTranslation(cx, cy, 0)
-      const mr = new THREE.Matrix4().makeRotationZ(-rotation)
-      const ms = new THREE.Matrix4().makeScale(scale, scale, 1)
-      const mt = new THREE.Matrix4().makeTranslation(-cx, -cy, 0)
-      m.multiply(mr).multiply(ms).multiply(mt)
-      m.decompose(goal.framePos, goal.frameQuat, goal.frameScale)
+      _frameM.makeTranslation(cx, cy, 0)
+      _frameMr.makeRotationZ(-rotation)
+      _frameMs.makeScale(scale, scale, 1)
+      _frameMt.makeTranslation(-cx, -cy, 0)
+      _frameM.multiply(_frameMr).multiply(_frameMs).multiply(_frameMt)
+      _frameM.decompose(goal.framePos, goal.frameQuat, goal.frameScale)
+    },
+    /** Pause the lines context while the goal tunnel owns the GPU (mobile). */
+    setPaused(next) {
+      paused = !!next
+      if (paused) {
+        for (const line of lines) line.container.visible = false
+        try {
+          renderer.clear()
+        } catch {
+          /* ignore */
+        }
+        lastHadVisible = false
+      }
     },
     destroy() {
       window.removeEventListener('resize', resize)

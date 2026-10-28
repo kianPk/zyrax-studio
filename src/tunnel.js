@@ -239,8 +239,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   try {
     renderer = new THREE.WebGLRenderer({
       canvas,
-      // Mobile AA on — without it helmet/arches stair-step badly at DPR≤1.5
-      antialias: true,
+      // Scene MSAA (post RT samples:4) already softens edges — canvas AA
+      // doubles the resolve cost on mobile with no visible quality gain.
+      antialias: false,
       alpha: false,
       powerPreference: 'high-performance',
       failIfMajorPerformanceCaveat: false,
@@ -979,20 +980,28 @@ void main(){
     console.warn('Broken glass failed to load', err)
   }
 
+  let lastResizeW = 0
+  let lastResizeH = 0
   const resize = () => {
     // Prefer the screen clip while tablet-windowed so the drawing buffer
     // matches the visible hole (not the full device shell including bezel).
     const clip = stickyEl?.querySelector?.('[data-goal-screen-clip]')
     const windowed = stickyEl?.classList.contains('is-windowed')
+    const pinned = stickyEl?.classList.contains('is-pinned')
     const sizeEl = windowed && clip ? clip : stickyEl
     let w = sizeEl?.clientWidth || window.innerWidth
     let h = sizeEl?.clientHeight || window.innerHeight
-    // Mobile full-bleed: use visualViewport so the tunnel fills the real screen
-    if (!windowed && isMobile && window.visualViewport) {
+    // Mobile full-bleed: visualViewport is the true visible screen (URL bar safe)
+    if ((pinned || !windowed) && isMobile && window.visualViewport) {
       w = Math.round(window.visualViewport.width) || w
       h = Math.round(window.visualViewport.height) || h
     }
-    camera.aspect = w / Math.max(h, 1)
+    w = Math.max(1, w)
+    h = Math.max(1, h)
+    if (w === lastResizeW && h === lastResizeH) return
+    lastResizeW = w
+    lastResizeH = h
+    camera.aspect = w / h
     applyCamera()
     renderer.setSize(w, h, false)
     post.resize(w, h)
@@ -1168,11 +1177,10 @@ void main(){
     renderer.setClearColor(bg, post.clearAlpha)
     sharedUniforms.u_bgColor.value.copy(bg)
     if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
-      // Wait: transparent so page/footer white shows under clearAlpha→0
+      // Desktop wait: transparent so page/footer shows under clearAlpha→0.
+      // Mobile: solid clear color — transparent + URL-bar mismatch letterboxed.
       stickyEl.style.background =
-        astronautDropRatio >= 1
-          ? 'transparent'
-          : bg.getStyle()
+        astronautDropRatio >= 1 && !isMobile ? 'transparent' : bg.getStyle()
     }
     // Page chrome: ONLY while the goal sticky is full-bleed pinned.
     const windowed = stickyEl?.classList.contains('is-windowed')

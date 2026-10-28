@@ -92,10 +92,14 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
       const sectionRect = sectionEl.getBoundingClientRect()
       const scrollY = window.scrollY || 0
+      const vvLeft = Math.round(vv?.offsetLeft || 0)
+      const vw = Math.round(vv?.width || window.innerWidth)
       // Document Y of sticky slot (spacer when pinned, else sticky itself)
       const slotEl = stickyEl.classList.contains('is-pinned') && pinSpacer ? pinSpacer : stickyEl
       const slotTop = slotEl.getBoundingClientRect().top + scrollY
-      const shouldPin = scrollY >= slotTop - 1 && sectionRect.bottom > vh
+      // Keep pinned through astronaut wait until the section fully leaves —
+      // unpinning early (bottom <= vh) collapsed height:0 and letterboxed.
+      const shouldPin = scrollY >= slotTop - 1 && sectionRect.bottom > 0
       const wasPinned = stickyEl.classList.contains('is-pinned')
       stickyEl.classList.toggle('is-pinned', shouldPin)
       if (pinSpacer) {
@@ -114,13 +118,19 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
           stickyHomeParent.appendChild(stickyEl)
         }
         stickyEl.style.top = ''
+        stickyEl.style.left = ''
+        stickyEl.style.width = ''
         stickyEl.style.height = ''
         window.dispatchEvent(new Event('resize'))
       }
       // iOS URL-bar: lock pinned sticky to visualViewport so it doesn't float/gap
       if (shouldPin) {
         stickyEl.style.top = `${vvTop}px`
+        stickyEl.style.left = `${vvLeft}px`
+        stickyEl.style.width = `${vw}px`
         stickyEl.style.height = `${vh}px`
+        stickyEl.style.right = 'auto'
+        stickyEl.style.bottom = 'auto'
       }
       // Match tunnel clear: black title/tunnel → black; white tunnel → white (not page grey)
       stickyEl.style.background =

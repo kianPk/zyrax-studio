@@ -1189,19 +1189,16 @@ html.is-goal-window body {
   z-index: 1;
 }
 #home-goal-tunnel-sticky.is-pinned {
-  /* Full-bleed to viewport — avoids black L/R gutters from transformed ancestors */
+  /* Full-bleed to visible viewport — JS sets exact visualViewport box on mobile.
+     Avoid 100dvw: on iOS it can exceed the visual viewport and letterbox. */
   position: fixed;
   left: 0;
   top: 0;
   right: auto;
   bottom: auto;
   width: 100%;
-  width: 100vw;
-  width: 100dvw;
   height: calc(var(--vh, 1vh) * 100);
   max-width: 100%;
-  max-width: 100vw;
-  max-width: 100dvw;
   margin: 0;
   z-index: 4;
   /* iOS: prevent sideways rubber-band revealing letterbox */

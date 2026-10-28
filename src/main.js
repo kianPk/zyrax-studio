@@ -18,14 +18,36 @@ const isMobile =
 
 // Match Lusion --vh — use visualViewport on mobile so address-bar show/hide
 // doesn't leave 100vh gaps / clipped sticky tunnels.
-const setVh = () => {
+let lastVhPx = 0
+const setVh = ({ notifyResize = false } = {}) => {
   const h = window.visualViewport?.height || window.innerHeight
-  document.documentElement.style.setProperty('--vh', `${h * 0.01}px`)
+  const next = h * 0.01
+  document.documentElement.style.setProperty('--vh', `${next}px`)
+  // Only rebroadcast when the visible height actually changed (URL bar),
+  // and never from a window resize listener (would recurse).
+  if (notifyResize && isMobile && Math.abs(h - lastVhPx) > 1) {
+    lastVhPx = h
+    window.dispatchEvent(new Event('resize'))
+  } else {
+    lastVhPx = h
+  }
 }
 setVh()
-window.addEventListener('resize', setVh)
-window.visualViewport?.addEventListener('resize', setVh)
-window.visualViewport?.addEventListener('scroll', setVh)
+window.addEventListener('resize', () => setVh())
+// Debounce visualViewport → --vh so 4200vh runway doesn't thrash every pixel.
+// Also re-pin sticky top/height when only offsetTop changes (URL bar).
+let vvVhTimer = 0
+let onVisualViewportSync = () => {}
+const onVisualViewport = () => {
+  if (vvVhTimer) return
+  vvVhTimer = window.setTimeout(() => {
+    vvVhTimer = 0
+    setVh({ notifyResize: true })
+    onVisualViewportSync()
+  }, isMobile ? 48 : 0)
+}
+window.visualViewport?.addEventListener('resize', onVisualViewport)
+window.visualViewport?.addEventListener('scroll', onVisualViewport)
 
 // Softer wheel than default Lenis — closer to Lusion ScrollPane (wheelEaseCoeff 12)
 // Mobile: shorter duration + native-ish touch to cut scroll jank vs multi-WebGL load
@@ -118,6 +140,12 @@ const goalFrame = goalSection
     })
   : { update() {} }
 
+onVisualViewportSync = () => {
+  goalFrame.update()
+  goalDom.updateScroll()
+  goalTunnel?.updateScroll?.()
+}
+
 let lastTick = performance.now()
 gsap.ticker.add((time) => {
   const now = performance.now()
@@ -149,13 +177,23 @@ gsap.ticker.add((time) => {
   featuredProjects.update(dt)
   featuredWebgl?.update(dt)
   reelScroll.update(dt)
+  // Single lines update per frame (was also on scroll → double WebGL submit = mobile lag)
   scrollLines?.update()
   goalTunnel?.tickFrame?.(dt)
   siteAudio.update(dt)
+  const phase = goalSection?.dataset?.goalPhase || ''
+  if (phase && phase !== lastGoalPhase) {
+    lastGoalPhase = phase
+    siteAudio.syncGoalPhase(phase)
+    // Free the lines GPU while the astronaut tunnel owns the screen
+    scrollLines?.setPaused?.(
+      isMobile && (phase === 'black-tunnel' || phase === 'white')
+    )
+  }
   if (goalTunnel?.getAstronautDropRatio) {
     siteAudio.syncTunnelAudio({
-      blackFrameInRatio: goalSection?.dataset?.goalPhase === 'window' ? 0 : 1,
-      blackTunnelRatio: goalSection?.dataset?.goalPhase === 'black-tunnel' ? 1 : 0,
+      blackFrameInRatio: phase === 'window' ? 0 : 1,
+      blackTunnelRatio: phase === 'black-tunnel' ? 1 : 0,
       whiteTunnelRatio: goalTunnel.getWhiteTunnelRatio?.() ?? 0,
       astronautDropRatio: goalTunnel.getAstronautDropRatio() ?? 0,
     })
@@ -164,15 +202,10 @@ gsap.ticker.add((time) => {
 gsap.ticker.lagSmoothing(0)
 
 lenis.on('scroll', () => {
-  goalDom.updateScroll()
+  // Frame first so window→full handoff pins before goalDom reads classes
   goalFrame.update()
+  goalDom.updateScroll()
   goalTunnel?.updateScroll()
-  scrollLines?.update()
-  const phase = goalSection?.dataset?.goalPhase || ''
-  if (phase && phase !== lastGoalPhase) {
-    lastGoalPhase = phase
-    siteAudio.syncGoalPhase(phase)
-  }
   if (goalTunnel?.getAstronautDropRatio) {
     siteAudio.syncTunnelAudio({
       whiteTunnelRatio: goalTunnel.getWhiteTunnelRatio?.() ?? 0,

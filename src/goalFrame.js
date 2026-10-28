@@ -76,6 +76,25 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     return { left: r.left, top: r.top, width: r.width, height: r.height }
   }
 
+  /** Visible viewport — visualViewport on mobile avoids iOS URL-bar letterboxing. */
+  const viewSize = () => {
+    const vv = window.visualViewport
+    if (isMobile && vv) {
+      return {
+        vw: Math.round(vv.width) || window.innerWidth,
+        vh: Math.round(vv.height) || window.innerHeight,
+        top: Math.round(vv.offsetTop || 0),
+        left: Math.round(vv.offsetLeft || 0),
+      }
+    }
+    return {
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      top: 0,
+      left: 0,
+    }
+  }
+
   /** Full-viewport overlay; bezel + clip track the (expanding) device rect. */
   const applyWindowOverlay = (device, rotateRad = 0, holeCollapse = 0) => {
     if (!device) return
@@ -83,14 +102,13 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     stickyEl.classList.remove('is-pinned')
     if (flowSpacer) flowSpacer.style.height = '0px'
 
-    const vw = window.innerWidth
-    const vh = window.innerHeight
+    const { vw, vh, top, left } = viewSize()
 
     // Sticky always covers the viewport (Lusion #canvas) so page content
     // scrolling under the goal never flashes a white half-page void.
     stickyEl.style.position = 'fixed'
-    stickyEl.style.left = '0px'
-    stickyEl.style.top = '0px'
+    stickyEl.style.left = `${left}px`
+    stickyEl.style.top = `${top}px`
     stickyEl.style.width = `${vw}px`
     stickyEl.style.height = `${vh}px`
     stickyEl.style.right = 'auto'
@@ -103,9 +121,11 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     stickyEl.style.boxShadow = 'none'
 
     const E = clamp(holeCollapse, 0, 1)
-    // Hole inset collapses toward full viewport as E → 1
-    const holeLeft = device.left + device.width * HOLE.left * (1 - E)
-    const holeTop = device.top + device.height * HOLE.top * (1 - E)
+    // device.* is viewport-absolute; sticky is fixed at (left,top) — convert to local
+    const holeLeft =
+      device.left - left + device.width * HOLE.left * (1 - E)
+    const holeTop =
+      device.top - top + device.height * HOLE.top * (1 - E)
     const holeW = device.width * HOLE.width + (vw - device.width * HOLE.width) * E
     const holeH = device.height * HOLE.height + (vh - device.height * HOLE.height) * E
 
@@ -127,8 +147,8 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     if (bezel) {
       bezel.style.position = 'absolute'
       bezel.style.inset = 'unset'
-      bezel.style.left = `${device.left}px`
-      bezel.style.top = `${device.top}px`
+      bezel.style.left = `${device.left - left}px`
+      bezel.style.top = `${device.top - top}px`
       bezel.style.width = `${device.width}px`
       bezel.style.height = `${device.height}px`
       bezel.style.objectFit = 'fill'
@@ -185,8 +205,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     const blackTunnel = ranges.range('blackTunnel').ratio
     const whiteTunnel = ranges.between('whiteTunnel', 'whiteFrameOut').ratio
     const sectionRect = sectionEl.getBoundingClientRect()
-    const vh = window.innerHeight
-    const vw = window.innerWidth
+    const { vw, vh, top: vvTop, left: vvLeft } = viewSize()
     const inView = sectionRect.bottom > 0 && sectionRect.top < vh
 
     frameRect = deviceRectFromAnchor()
@@ -203,7 +222,8 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
         E = Math.max(E, fit(catchUp, 0, 1, 0, 1))
       }
 
-      const full = { left: 0, top: 0, width: vw, height: vh }
+      // Expand toward the visible viewport origin (not layout 0,0 on iOS)
+      const full = { left: vvLeft, top: vvTop, width: vw, height: vh }
       const device = {
         left: frameRect.left + (full.left - frameRect.left) * E,
         top: frameRect.top + (full.top - frameRect.top) * E,
@@ -266,6 +286,34 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
       if (imgInOuter) imgInOuter.style.visibility = 'hidden'
       if (contextInner) contextInner.style.transform = ''
       if (titleEl) titleEl.style.visibility = ''
+      // Hand off fullscreen immediately — waiting for the next scroll tick left
+      // height:0 sticky and exposed white/black letterbox bars on mobile.
+      stickyEl.classList.add('is-pinned')
+      stickyEl.style.position = 'fixed'
+      stickyEl.style.left = `${vvLeft}px`
+      stickyEl.style.top = `${vvTop}px`
+      stickyEl.style.width = `${vw}px`
+      stickyEl.style.height = `${vh}px`
+      stickyEl.style.right = 'auto'
+      stickyEl.style.bottom = 'auto'
+      stickyEl.style.zIndex = '4'
+      stickyEl.style.background = '#000000'
+      // Keep layout height via goalDom's pin spacer (not flowSpacer) before reparent
+      if (flowSpacer) flowSpacer.style.height = '0px'
+      let spacerNode = stickyEl.previousElementSibling
+      while (spacerNode) {
+        if (
+          spacerNode !== flowSpacer &&
+          spacerNode.getAttribute('aria-hidden') === 'true'
+        ) {
+          spacerNode.style.height = `${vh}px`
+          break
+        }
+        spacerNode = spacerNode.previousElementSibling
+      }
+      if (stickyEl.parentElement !== document.body) {
+        document.body.appendChild(stickyEl)
+      }
       lastMode = 'full'
       window.dispatchEvent(new Event('resize'))
     } else if (!inWindowPhase && imgInOuter && blackTunnel > 0.05) {
@@ -290,12 +338,17 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     syncBezelSrc()
     update()
   }
+  // Native scroll too — on mobile Lenis syncTouch is off, so window scroll
+  // must drive the tablet→fullscreen handoff (avoids letterbox after astronaut).
   window.addEventListener('resize', onResize)
+  window.addEventListener('scroll', update, { passive: true })
+  update()
 
   return {
     update,
     destroy() {
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('scroll', update)
       bezel?.remove()
       clearWindowed()
     },
