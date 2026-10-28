@@ -876,7 +876,15 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     }
   }
 
-  const stickyEl = canvas.parentElement || sectionEl
+  // goalFrame wraps the canvas into [data-goal-screen-clip], so parentElement
+  // is NOT the sticky. Always resolve the real #home-goal-tunnel-sticky —
+  // is-pinned / is-windowed live there (wrong node painted the whole site black).
+  const stickyEl =
+    document.getElementById('home-goal-tunnel-sticky') ||
+    canvas.closest?.('#home-goal-tunnel-sticky') ||
+    sectionEl?.querySelector?.('#home-goal-tunnel-sticky') ||
+    canvas.parentElement ||
+    sectionEl
   const ranges = createGoalRanges(sectionEl)
   let whiteTunnelRatio = 0
   let showRatio = 0
@@ -1043,10 +1051,14 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
       stickyEl.style.background = bg.getStyle()
     }
-    // Page chrome: keep light grey during tablet-window phase; only force
-    // black/white once the tunnel is full-bleed (pinned / past blackFrameIn).
+    // Page chrome: ONLY while the goal sticky is full-bleed pinned.
+    // blackTitleRatio is 0 (hence < 1) for the entire page BEFORE the goal
+    // section — treating that as "black title active" painted the hero black
+    // and hid the ZYRAX logo. Lusion only applies these clears inside the
+    // GoalTunnels stage, not globally.
     const windowed = stickyEl?.classList.contains('is-windowed')
-    if (windowed) {
+    const pinned = stickyEl?.classList.contains('is-pinned')
+    if (!pinned || windowed) {
       document.documentElement.style.background = ''
       document.body.style.background = ''
     } else if (isWhiteTunnelActive && astronautDropRatio < 1) {
