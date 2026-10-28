@@ -1166,7 +1166,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         : 1 - whiteFrameRatio
     // Window phase: oversize mixedFrameH so FOV tightens and astronaut fills the tablet
     const frameStart = windowed
-      ? Math.max(frameH * (isMobile ? 1.35 : 1.65), vhPx * (isMobile ? 0.55 : 0.72))
+      ? Math.max(frameH * (isMobile ? 1.55 : 1.95), vhPx * (isMobile ? 0.62 : 0.82))
       : frameH * (isMobile ? 0.72 : 0.55)
     const mixedFrameH = THREE.MathUtils.lerp(frameStart, vhPx, frameMix)
     const dist = DEFAULT_CAM.distanceTo(DEFAULT_LOOK)
@@ -1191,7 +1191,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
         blackFrameInRatio,
         0,
         1,
-        windowed ? (isMobile ? -10 : -18) : isMobile ? 12 : 20,
+        windowed ? (isMobile ? -16 : -28) : isMobile ? 12 : 20,
         0
       )
       blackTunnelGroup.position.z = -80

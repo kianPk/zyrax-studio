@@ -1101,15 +1101,20 @@ button {
   position: relative;
   z-index: 2;
   grid-column: 1 / span 12;
-  font-size: 8vw;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  margin-top: 2.2em;
-  margin-bottom: 0.5em;
-  left: -0.068em;
-  width: 11em;
+  font-size: clamp(2.6rem, 7.2vw, 7.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  font-weight: 500;
+  margin-top: 1.6em;
+  margin-bottom: 0.35em;
+  left: -0.04em;
+  width: min(11.5em, 92vw);
   will-change: transform;
-  overflow: hidden;
+  overflow: visible;
+}
+.home-goal-title-line {
+  display: block;
+  white-space: nowrap;
 }
 /* Lusion tablet window (blackFrameShow → blackFrameIn) */
 #home-goal-image-in-outer {
@@ -1122,6 +1127,11 @@ button {
   height: 0;
   width: calc(100% + var(--grid-gap));
   padding-top: calc((100% + var(--grid-gap)) * 1080 / 1496);
+  /* Device shell under the WebGL sticky — matches Lusion image-in plate */
+  background: #000 url(/zyrax-studio/assets/textures/tunnels/tablet_bezel.png) center / 100% 100% no-repeat;
+  border-radius: 2.2%;
+  overflow: hidden;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
 }
 #home-goal-image-in {
   position: absolute;
@@ -1130,8 +1140,9 @@ button {
   width: 92.5%;
   height: 89.5%;
   border-radius: 1.2vw;
-  overflow: visible;
+  overflow: hidden;
   pointer-events: none;
+  background: #000;
 }
 #home-goal-frame-bezel {
   position: absolute;
@@ -1146,9 +1157,15 @@ button {
 }
 #home-goal-tunnel-sticky [data-goal-screen-clip] {
   position: absolute;
-  inset: 0;
+  /* Do NOT set inset here — goalFrame positions the hole with left/top/width/height.
+     A stylesheet inset:0 was overriding inline left/top and causing white gaps. */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   z-index: 1;
+  background: #000;
 }
 #home-goal-image-out-outer {
   position: relative;
@@ -1196,7 +1213,8 @@ button {
 #home-goal-tunnel-sticky.is-windowed {
   /* Framed inside tablet — not full-bleed yet */
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
-  background: transparent !important;
+  /* Keep black under the bezel hole (was transparent → white page bleed) */
+  background: #000 !important;
 }
 html.is-goal-window,
 html.is-goal-window body {
@@ -1597,12 +1615,15 @@ html.is-goal-window body {
   }
   #home-goal-title {
     grid-column: 1 / span 6;
-    font-size: 10vw;
+    font-size: clamp(2rem, 9.5vw, 3.4rem);
     width: inherit;
     max-width: 100%;
     margin-top: 0;
     left: 0;
     overflow: visible;
+  }
+  .home-goal-title-line {
+    white-space: normal;
   }
   #home-goal-texts {
     position: relative;

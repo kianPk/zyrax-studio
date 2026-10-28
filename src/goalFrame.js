@@ -31,7 +31,7 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     screenClip = document.createElement('div')
     screenClip.setAttribute('data-goal-screen-clip', '')
     screenClip.style.cssText =
-      'position:absolute;inset:0;overflow:hidden;border-radius:inherit;z-index:1;'
+      'position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden;border-radius:inherit;z-index:1;background:#000;'
     // Move existing canvas + title into the clip so bezel sits above the canvas
     const kids = Array.from(stickyEl.childNodes)
     stickyEl.appendChild(screenClip)
@@ -96,18 +96,22 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
     stickyEl.style.overflow = 'hidden'
     stickyEl.style.zIndex = '3'
     stickyEl.style.transform = rotateRad ? `rotate(${rotateRad}rad)` : 'none'
-    stickyEl.style.background = 'transparent'
+    // Black underlay so any sub-pixel miss of the screen clip never flashes page white
+    stickyEl.style.background = '#000'
     stickyEl.style.boxShadow = '0 18px 60px rgba(0,0,0,0.28)'
 
-    // Canvas only fills the screen hole; bezel covers the rest
+    // Canvas only fills the screen hole; bezel covers the rest.
+    // IMPORTANT: set inset unset FIRST — assigning inset='' after left/top
+    // clears those longhands and the stylesheet `inset:0` snaps the clip to
+    // the top-left, leaving white page-bg gaps on the right/bottom of the hole.
     if (screenClip) {
+      screenClip.style.inset = 'unset'
       screenClip.style.left = `${HOLE.left * 100}%`
       screenClip.style.top = `${HOLE.top * 100}%`
-      screenClip.style.width = `${HOLE.width * 100}%`
-      screenClip.style.height = `${HOLE.height * 100}%`
       screenClip.style.right = 'auto'
       screenClip.style.bottom = 'auto'
-      screenClip.style.inset = ''
+      screenClip.style.width = `${HOLE.width * 100}%`
+      screenClip.style.height = `${HOLE.height * 100}%`
       screenClip.style.borderRadius = `${Math.min(rect.width, rect.height) * 0.03}px`
       screenClip.style.background = '#000'
     }
@@ -235,8 +239,11 @@ export function bindGoalFrame(sectionEl, stickyEl, ranges, scrollLines) {
         const t = HOLE.top * (1 - E)
         const w = HOLE.width + (1 - HOLE.width) * E
         const h = HOLE.height + (1 - HOLE.height) * E
+        screenClip.style.inset = 'unset'
         screenClip.style.left = `${l * 100}%`
         screenClip.style.top = `${t * 100}%`
+        screenClip.style.right = 'auto'
+        screenClip.style.bottom = 'auto'
         screenClip.style.width = `${w * 100}%`
         screenClip.style.height = `${h * 100}%`
       }
