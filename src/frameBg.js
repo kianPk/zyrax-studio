@@ -231,9 +231,9 @@ export async function createFrameBg({ base }) {
         ne.copy(_blue).lerp(_tmp.copy(_black), ee)
       }
       uniforms.u_dom2Texture.value = desktopTex?.image?.width ? desktopTex : blackTex
-      uniforms.u_bgColor.value.set(
-        astronautDropRatio > 0.001 ? '#000000' : '#f0f1fa'
-      )
+      // Never paint the surround off-white during white/out — a bad UV hole
+      // previously flashed the whole screen white. Lusion goes black for glass.
+      uniforms.u_bgColor.value.set('#000000')
     }
 
     const K = viewportH * 0.2 * (1 - clamp(blackFrameShowRatio, 0, 1))
@@ -242,11 +242,21 @@ export async function createFrameBg({ base }) {
     const te = astronautDropRatio
 
     // Exact Lusion: visible = E < 1 && te < 1
-    mesh.visible = E < 0.999 && te < 1
+    // Also require the frame to intersect the viewport (off-screen rect → full cover)
+    const frameTop = w.top + K
+    const frameBottom = frameTop + w.height
+    const onStage =
+      w.bottom > 0 &&
+      w.top < viewportH &&
+      w.right > 0 &&
+      w.left < viewportW &&
+      frameBottom > 0 &&
+      frameTop < viewportH
+    mesh.visible = E < 0.999 && te < 1 && onStage
     if (!mesh.visible) return null
 
     _domX = w.left
-    _domY = w.top + K
+    _domY = frameTop
     _capturedOffsetY = 0
     uniforms.u_domWH.value.set(
       Math.max(1, Math.ceil(w.width)),

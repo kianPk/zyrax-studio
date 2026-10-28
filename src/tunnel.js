@@ -1214,19 +1214,79 @@ void main(){
       }
 
       const isBlackSide = isBlackTunnelActive || isBlackTitleActive
-      const frameRect = isBlackSide
-        ? inRect && inRect.width > 8
+      const pinned = stickyEl?.classList.contains('is-pinned')
+      const windowed = stickyEl?.classList.contains('is-windowed')
+      const stickyRect = stickyEl?.getBoundingClientRect?.()
+      const clipEl = stickyEl?.querySelector?.('[data-goal-screen-clip]')
+      const clipRect = clipEl?.getBoundingClientRect?.()
+
+      // While the tunnel sticky owns the screen, #home-goal-image-out is often
+      // off-document (scrolled away). Using its raw getBoundingClientRect made
+      // frameBg paint a full-screen opaque white plate. Synthesize the out-frame
+      // in sticky/clip space instead (Lusion ScrollDomRange keeps it on-stage).
+      const onScreen = (r) =>
+        !!r &&
+        r.width > 8 &&
+        r.height > 8 &&
+        r.bottom > 8 &&
+        r.top < vhPx - 8 &&
+        r.right > 8 &&
+        r.left < vwPx - 8
+
+      const aspectOut = 2000 / 1537
+      const makeCentered = (host, h) => {
+        const hh = Math.max(8, h)
+        const ww = hh * aspectOut
+        const hostW = host?.width || vwPx
+        const hostH = host?.height || vhPx
+        const hostL = host?.left || 0
+        const hostT = host?.top || 0
+        return {
+          left: hostL + (hostW - ww) * 0.5,
+          top: hostT + (hostH - hh) * 0.5,
+          width: ww,
+          height: hh,
+          right: hostL + (hostW - ww) * 0.5 + ww,
+          bottom: hostT + (hostH - hh) * 0.5 + hh,
+        }
+      }
+
+      let frameRect
+      let innerRect
+      if (isBlackSide) {
+        frameRect = onScreen(inRect)
           ? inRect
-          : outRect
-        : outRect && outRect.width > 8
+          : onScreen(clipRect)
+            ? clipRect
+            : onScreen(stickyRect)
+              ? stickyRect
+              : null
+        innerRect = onScreen(inInnerRect) ? inInnerRect : frameRect
+      } else if (pinned || windowed) {
+        // Glass / white out: frame lives in the sticky viewport
+        const host = onScreen(clipRect) ? clipRect : stickyRect
+        const layoutH =
+          onScreen(outRect) && outRect.height > 8
+            ? outRect.height
+            : Math.min(
+                (host?.height || vhPx) * 0.72,
+                ((host?.width || vwPx) * 0.92) / aspectOut
+              )
+        frameRect = makeCentered(host, layoutH)
+        // Bezel inset ~ Lusion #home-goal-image-out (left 2.2%, top 2.8%, w 95.7%, h 70.2% of outer)
+        innerRect = {
+          left: frameRect.left + frameRect.width * 0.022,
+          top: frameRect.top + frameRect.height * 0.028,
+          width: frameRect.width * 0.957,
+          height: frameRect.height * 0.702,
+        }
+        frameH = frameRect.height
+      } else {
+        frameRect = onScreen(outRect)
           ? outRect
-          : {
-              left: (vwPx - frameH * (2000 / 1537)) * 0.5,
-              top: (vhPx - frameH) * 0.5,
-              width: frameH * (2000 / 1537),
-              height: frameH,
-            }
-      const innerRect = isBlackSide ? inInnerRect : outInnerRect
+          : makeCentered({ left: 0, top: 0, width: vwPx, height: vhPx }, frameH)
+        innerRect = onScreen(outInnerRect) ? outInnerRect : frameRect
+      }
 
       // CSS -- used by Lusion properties.u_globalRadius (rounded frame)
       let globalRadius = 20
