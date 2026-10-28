@@ -530,11 +530,11 @@ button {
   position: relative;
   grid-column: 4 / span 5;
   height: fit-content;
-  line-height: 1.05;
-  font-family: Syne, Aeonik, system-ui, sans-serif;
-  font-size: clamp(1.75rem, 4.2vw, 4.25rem);
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  line-height: 1.25;
+  font-family: 'Instrument Sans', Aeonik, system-ui, sans-serif;
+  font-size: clamp(0.95rem, 1.55vw, 1.35rem);
+  font-weight: 400;
+  letter-spacing: 0.02em;
   margin: 0;
   will-change: transform, opacity;
   z-index: 2;
@@ -552,13 +552,12 @@ button {
   opacity: 1;
 }
 #home-hero-title .word:not(.hero-name) {
-  font-weight: 500;
+  font-weight: 400;
   color: var(--color-black);
 }
 #home-hero-title .word.hero-name {
-  font-weight: 800;
-  letter-spacing: -0.045em;
-  /* Animated gradient fill — fades between brand hues */
+  font-weight: 600;
+  letter-spacing: 0.01em;
   background-image: linear-gradient(
     110deg,
     var(--color-blue) 0%,
@@ -576,9 +575,7 @@ button {
   -webkit-text-fill-color: transparent;
 }
 #home-hero-title.is-in .word.hero-name {
-  animation:
-    hero-name-flow 5.5s cubic-bezier(0.4, 0, 0.2, 1) infinite,
-    hero-name-breathe 2.8s ease-in-out infinite;
+  animation: hero-name-flow 5.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 @keyframes hero-name-flow {
   0% {
@@ -587,7 +584,7 @@ button {
   }
   22% {
     background-position: 35% 50%;
-    opacity: 0.35;
+    opacity: 0.4;
   }
   45% {
     background-position: 55% 50%;
@@ -595,20 +592,11 @@ button {
   }
   68% {
     background-position: 85% 50%;
-    opacity: 0.4;
+    opacity: 0.45;
   }
   100% {
     background-position: 0% 50%;
     opacity: 1;
-  }
-}
-@keyframes hero-name-breathe {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(0, -0.04em, 0) scale(1.04);
   }
 }
 #home-hero-visual-container {
@@ -1891,7 +1879,7 @@ html.is-white-bg #end-section-title-bottom-right-decoration {
 
   #home-hero-title {
     grid-column: 1 / span 12;
-    font-size: clamp(1.85rem, 8.5vw, 3rem);
+    font-size: clamp(0.9rem, 3.6vw, 1.15rem);
     margin-top: calc(var(--base-padding-y) + var(--header-size) * 2);
   }
   /* Lusion mobile uses 6-col grid + span 6 (= full width). We stay on 12-col. */
