@@ -28,6 +28,7 @@ import { BrownianMotion, SecondOrderDynamics, Simple1DNoise } from './lusionMoti
 import { easeSineInOut } from './scrollMath.js'
 import { createWhiteTunnelExtras } from './whiteTunnelExtras.js'
 import { createBrokenGlass } from './brokenGlass.js'
+import { createFrameBg } from './frameBg.js'
 
 const BONE_COUNT = 53
 const BLOCK_COUNT = 16
@@ -881,9 +882,13 @@ void main(){
   let freezeRatio = 0
   let autoScrollSpeed = 0
   let whiteTunnelAstronautOutRatio = 0
-  // Lusion GoalTunnelAstronauts.extraCameraViewportOffset — pans while dropping out
-  let camViewOffsetX = 0
-  let camViewOffsetY = 0
+  // Lusion splits camera offsets:
+  //   properties.cameraViewportOffset* → main camera (frame centering)
+  //   GoalTunnelAstronauts.extraCameraViewportOffset* → astronauts ONLY (drop pan)
+  let frameCamOffsetX = 0
+  let frameCamOffsetY = 0
+  let astroExtraOffsetX = 0
+  let astroExtraOffsetY = 0
   let dropScrollPx = 0
   window.addEventListener(
     'pointermove',
@@ -918,11 +923,11 @@ void main(){
     camera.translateZ(n)
     camera.fov = baseFov
     cameraDistance += n
-    // Lusion setViewOffset — drop/wait scroll pans the waving astronaut
+    // Lusion setViewOffset — ONLY frame-centering (not drop pan; that is astronaut-only)
     const vw = Math.max(1, renderer.domElement.width || window.innerWidth)
     const vhBuf = Math.max(1, renderer.domElement.height || window.innerHeight)
-    if (Math.abs(camViewOffsetX) > 0.25 || Math.abs(camViewOffsetY) > 0.25) {
-      camera.setViewOffset(vw, vhBuf, camViewOffsetX, camViewOffsetY, vw, vhBuf)
+    if (Math.abs(frameCamOffsetX) > 0.25 || Math.abs(frameCamOffsetY) > 0.25) {
+      camera.setViewOffset(vw, vhBuf, frameCamOffsetX, frameCamOffsetY, vw, vhBuf)
     } else {
       camera.clearViewOffset()
     }
@@ -952,6 +957,19 @@ void main(){
     heroMatrix.compose(basePathPos, basePathQuat, oneScale)
     heroMatrix.multiply(motionMatrix)
     heroMatrix.decompose(tmpV, tmpQ, tmpV2)
+    // Approximate Lusion astronaut-only viewOffset as world shift at hero depth
+    // (main camera stays put so glass/frame don't pan with the drop).
+    {
+      const vwBuf = Math.max(1, window.innerWidth || 1)
+      const vhBuf = Math.max(1, window.innerHeight || 1)
+      const dist = Math.max(0.5, camera.position.distanceTo(tmpV))
+      const worldH =
+        2 * Math.tan(((camera.fov || 45) * Math.PI) / 360) * dist
+      const worldW = worldH * (vwBuf / vhBuf)
+      // setViewOffset(+ox,+oy): content shifts opposite; oy=-ce → fall down
+      tmpV.x += (astroExtraOffsetX / vwBuf) * worldW
+      tmpV.y += (astroExtraOffsetY / vhBuf) * worldH
+    }
     instancePos.setXYZ(0, tmpV.x, tmpV.y, tmpV.z)
     instanceOrient.setXYZW(0, tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w)
     instancePos.needsUpdate = true
@@ -1025,11 +1043,18 @@ void main(){
 
   // Shattered glass pane at whiteFrameBreak (astronaut punches through)
   let brokenGlass = null
+  let frameBg = null
   try {
     brokenGlass = await createBrokenGlass(scene, { base })
     post.setGlassPass(brokenGlass)
   } catch (err) {
     console.warn('Broken glass failed to load', err)
+  }
+  try {
+    frameBg = await createFrameBg({ base })
+    post.setFrameBgPass(frameBg)
+  } catch (err) {
+    console.warn('FrameBg failed to load', err)
   }
 
   let lastResizeW = 0
@@ -1106,16 +1131,14 @@ void main(){
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
     whiteTunnelAstronautOutRatio = ranges.between('whiteFrameBreak', 'astronautWait').ratio
-    // Lusion GoalTunnelAstronauts extras — pan while dropping / waving.
-    // Soft-cap Y and ease pan back during wait so the hand-wave stays on screen
-    // (raw Lusion -ce grew through wait and could push the hero off-frame).
+    // Exact Lusion astronaut-only extras during out/drop (NOT main camera):
+    //   extraCameraViewportOffsetX = -fit(q.ratio,0,1,0,-center,cubicInOut)
+    //   extraCameraViewportOffsetY = -ce
     {
       const dropPx = ranges.range('astronautDrop')
-      const waitPx = ranges.range('astronautWait')
       const ce = Math.max(0, dropPx.pixel || 0)
       dropScrollPx = ce
       const vwPx = window.innerWidth || 1
-      const vhLocal = window.innerHeight || 1
       const outEl =
         sectionEl.querySelector('#home-goal-image-out') ||
         sectionEl.querySelector('#home-goal-image-out-inner')
@@ -1123,7 +1146,7 @@ void main(){
       const centerDelta = w
         ? w.left + w.width * 0.5 - vwPx * 0.5
         : 0
-      camViewOffsetX = fit(
+      astroExtraOffsetX = fit(
         astronautDropRatio,
         0,
         1,
@@ -1131,14 +1154,10 @@ void main(){
         centerDelta,
         easeCubicInOut
       )
-      const rawY = -ce
-      const maxPan = vhLocal * (isMobile ? 0.28 : 0.4)
-      const dropPan =
-        fit(astronautDropRatio, 0.35, 1, 0, 1) *
-        THREE.MathUtils.clamp(rawY, -maxPan, maxPan)
-      // Settle toward center as wait progresses so the wave reads clearly
-      const waitSettle = fit(waitPx?.ratio ?? 0, 0, 0.35, 0, 1)
-      camViewOffsetY = dropPan * (1 - waitSettle * 0.85)
+      astroExtraOffsetY = -ce
+      // Frame-centering filled below after frameBg update
+      frameCamOffsetX = 0
+      frameCamOffsetY = 0
     }
 
     isBlackTitleActive = blackTitleRatio < 1
@@ -1164,12 +1183,20 @@ void main(){
       isMobile,
     })
 
-    // GoalTunnelGlass — Lusion drives ratio with getRange(whiteFrameBreak, astronautDrop)
-    if (brokenGlass) {
+    // GoalSection frameBg (bezel + blue glow) + GoalTunnelGlass
+    {
       const imgOutInner = sectionEl.querySelector('#home-goal-image-out-inner')
       const imgOut = sectionEl.querySelector('#home-goal-image-out')
+      const imgIn = sectionEl.querySelector('#home-goal-image-in')
+      const imgInInner = sectionEl.querySelector('#home-goal-image-in-inner')
       const outRect = imgOut?.getBoundingClientRect()
       const outInnerRect = imgOutInner?.getBoundingClientRect()
+      const inRect = imgIn?.getBoundingClientRect()
+      const inInnerRect = imgInInner?.getBoundingClientRect()
+      const blackFrameShowRatio = ranges.range('blackFrameShow').ratio
+      const vwPx = window.innerWidth || 1
+      const vhPx = window.innerHeight || 1
+
       // Prefer real out-frame height; fall back to aspect from inner width
       let frameH =
         outRect && outRect.height > 8
@@ -1182,33 +1209,77 @@ void main(){
           outInnerRect?.width ||
           imgOutInner?.clientWidth ||
           stickyEl?.clientWidth ||
-          window.innerWidth * 0.7
+          vwPx * 0.7
         frameH = w * (1537 / 2000)
       }
-      // Exact Lusion GoalSection (after black tunnel):
-      // E = fit(offsetY, whiteFrameOut.from, whiteFrameOut.to, 1, 0)
-      //   → 1 before/at start of whiteFrameOut, 0 after it ends
-      // p = mix(1, diagonal/minSide, E)
-      // During glass break (past whiteFrameOut) E=0 → scale≈1 (out-frame size).
-      // We had this inverted (expanding with whiteFrameOut) so shards filled the
-      // whole screen instead of punching through the framed pane.
-      const diag = Math.hypot(window.innerWidth, vh)
-      const minSide = Math.min(
-        outRect?.width > 8 ? outRect.width : frameH * (2000 / 1537),
-        frameH
-      )
-      const E = 1 - clamp(whiteFrameOutRatio, 0, 1)
-      const frameScale = THREE.MathUtils.lerp(1, diag / Math.max(minSide, 1), E)
-      // Lusion: f = E * -0.3 during white out; damp as drop starts
-      const frameRotation = -0.3 * E * fit(astronautDropRatio, 0, 0.15, 1, 0.2)
-      brokenGlass.updateFromScroll({
-        // Exact Lusion: glass.ratio = fit(getRange(break, drop), 0, 1, 0, 1, sineOut)
+
+      const isBlackSide = isBlackTunnelActive || isBlackTitleActive
+      const frameRect = isBlackSide
+        ? inRect && inRect.width > 8
+          ? inRect
+          : outRect
+        : outRect && outRect.width > 8
+          ? outRect
+          : {
+              left: (vwPx - frameH * (2000 / 1537)) * 0.5,
+              top: (vhPx - frameH) * 0.5,
+              width: frameH * (2000 / 1537),
+              height: frameH,
+            }
+      const innerRect = isBlackSide ? inInnerRect : outInnerRect
+
+      // CSS -- used by Lusion properties.u_globalRadius (rounded frame)
+      let globalRadius = 20
+      try {
+        const rs = getComputedStyle(document.documentElement)
+        const raw = parseFloat(
+          rs.getPropertyValue('--global-border-radius') || ''
+        )
+        if (Number.isFinite(raw) && raw > 0) globalRadius = raw
+      } catch {
+        /* ignore */
+      }
+
+      const fb = frameBg?.updateFromScroll({
+        isBlackSide,
+        blackFrameInRatio,
+        whiteFrameOutRatio,
         glassBreakRatio: astronautDropRatio,
         astronautDropRatio,
-        frameHeight: frameH,
-        frameRotation,
-        frameScale,
+        blackFrameShowRatio,
+        frameRect,
+        innerRect,
+        viewportW: vwPx,
+        viewportH: vhPx,
+        globalRadius,
       })
+
+      // Lusion properties.cameraViewportOffset — main camera only
+      if (fb) {
+        frameCamOffsetX = fb.cameraViewportOffsetX || 0
+        frameCamOffsetY = fb.cameraViewportOffsetY || 0
+      }
+
+      const E = 1 - clamp(whiteFrameOutRatio, 0, 1)
+      const diag = Math.hypot(vwPx, vhPx)
+      const minSide = Math.min(
+        frameRect?.width > 8 ? frameRect.width : frameH * (2000 / 1537),
+        frameH
+      )
+      // Prefer live frameBg scale/rotation (exact GoalSection); fall back to formula
+      const frameScale = fb?.frameScale ?? THREE.MathUtils.lerp(1, diag / Math.max(minSide, 1), E)
+      const frameRotation = fb?.frameRotation ?? E * -0.3
+
+      if (brokenGlass) {
+        brokenGlass.updateFromScroll({
+          // Exact Lusion: glass.ratio = fit(getRange(break, drop), 0, 1, 0, 1, sineOut)
+          glassBreakRatio: astronautDropRatio,
+          astronautDropRatio,
+          frameHeight: frameH,
+          frameRotation,
+          frameScale,
+        })
+      }
     }
 
     sharedUniforms.u_whiteTunnelRatio.value = whiteTunnelRatio
@@ -1838,6 +1909,7 @@ void main(){
       window.removeEventListener('resize', resize)
       window.removeEventListener('scroll', onScroll)
       brokenGlass?.dispose()
+      frameBg?.dispose()
       feedbackRT.dispose()
       feedbackRT2.dispose()
       feedbackBlurRT.dispose()

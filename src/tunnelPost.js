@@ -188,8 +188,9 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
   let glassBgRT = makeRT(1, 1, false)
   let efxRT = makeRT(1, 1, false)
   let highPassRT = makeRT(1, 1, false)
-  /** Optional: (api) => void — draw GoalTunnelGlass into the scene RT */
+  /** Optional: draw GoalSection frameBg + GoalTunnelGlass into the scene RT */
   let glassPass = null
+  let frameBgPass = null
   const blurH = []
   const blurV = []
   for (let i = 0; i < ITERATION; i++) {
@@ -509,12 +510,28 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     renderer.clear()
     const prevBg = scene.background
     scene.background = null
-    // Hide glass for the base scene pass — drawn as a refraction overlay next
+    // Hide overlays for the base scene pass — drawn in preUfx order next
     const glassMesh = glassPass?.mesh
     const glassWasVisible = !!glassMesh?.visible
     if (glassWasVisible) glassMesh.visible = false
+    const frameMesh = frameBgPass?.mesh
+    const frameWasVisible = !!frameMesh?.visible
+    if (frameWasVisible) frameMesh.visible = false
     renderer.render(scene, camera)
     scene.background = prevBg
+
+    // 1a) GoalSection frameBg — bezel + blue glow hole (Lusion preUfx, renderOrder -1)
+    if (frameBgPass?.visible && frameBgPass.overlayScene) {
+      if (frameMesh) frameMesh.visible = true
+      renderer.setRenderTarget(sceneRT)
+      renderer.autoClear = false
+      renderer.clearDepth()
+      // Orthographic camera for fullscreen frame quad
+      renderer.render(frameBgPass.overlayScene, cam)
+      renderer.autoClear = true
+    } else if (frameWasVisible && frameMesh) {
+      frameMesh.visible = false
+    }
 
     // 1b) GoalTunnelGlass — refract the just-rendered scene (Lusion preUfx)
     if (glassPass?.active && glassPass.overlayScene) {
@@ -673,6 +690,9 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     markEfxSync,
     setGlassPass(api) {
       glassPass = api || null
+    },
+    setFrameBgPass(api) {
+      frameBgPass = api || null
     },
     setEfxAmount(v) {
       efxAmount = v

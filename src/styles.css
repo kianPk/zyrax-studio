@@ -1254,36 +1254,55 @@ html.is-goal-window body {
   margin: 0 0.25ch;
 }
 
-/* END */
+/* END — exact Lusion layout: 350vh runway, sticky 100vh outer for CTA */
 #end-section {
-  background: #121416;
+  position: relative;
+  height: calc(var(--vh, 1vh) * 350);
+  font-size: clamp(0.875rem, 1vw, 2rem);
   color: var(--color-white);
-  min-height: 100vh;
+  background: #000000;
   display: block;
   padding: 0;
 }
-#end-section-outer,
-#end-section-inner {
-  position: relative;
+html.is-white-bg #end-section {
+  color: var(--color-black);
+}
+#end-section-outer {
+  position: sticky;
+  top: 0;
   width: 100%;
-  min-height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
+}
+#end-section-inner {
+  position: absolute;
+  width: 100%;
+  height: 100%;
 }
 #end-section-content {
   position: absolute;
   left: 50%;
-  top: 45%;
+  top: calc(50% - 3em);
   transform: translate(-50%, -50%);
   text-align: center;
   width: 100%;
-  padding: 0 var(--base-padding-x);
+}
+@media (max-width: 560px) {
+  #end-section-content {
+    top: 40%;
+  }
 }
 #end-section-content-crosses {
   position: absolute;
   width: 60vw;
-  height: 50vh;
+  height: calc(100% + 10vh);
   left: calc(50% - 30vw);
-  top: -20vh;
   pointer-events: none;
+}
+@media (max-width: 560px) {
+  #end-section-content-crosses {
+    width: calc(100% - 2 * var(--base-padding-x));
+    left: var(--base-padding-x);
+  }
 }
 .end-section-content-cross {
   position: absolute;
@@ -1299,6 +1318,10 @@ html.is-goal-window body {
   left: 0;
   top: calc(0.5 * var(--cross-size));
   background: var(--color-white);
+}
+html.is-white-bg .end-section-content-cross:before,
+html.is-white-bg .end-section-content-cross:after {
+  background: var(--color-black);
 }
 .end-section-content-cross:after {
   transform: rotate(90deg);
@@ -1324,20 +1347,44 @@ html.is-goal-window body {
   bottom: 0;
 }
 #end-section-subtitle {
+  overflow: hidden;
+  line-height: 1.4;
+  font-size: 1em;
   text-transform: uppercase;
-  font-size: 0.85rem;
-  letter-spacing: 0.12em;
-  margin-bottom: 1.2em;
+  will-change: transform;
+}
+@media (max-width: 560px) {
+  #end-section-subtitle {
+    font-size: 1.2em;
+    margin: auto;
+    text-align: center;
+    width: 55%;
+  }
 }
 #end-section-title {
+  --font-size: 10vw;
   position: relative;
   width: fit-content;
   margin: 0.4em auto auto;
-  font-size: 10vw;
   line-height: 1;
+  font-size: var(--font-size);
+  will-change: transform;
 }
-.end-section-title-link-line {
-  display: block;
+@media (min-aspect-ratio: 21/9) {
+  #end-section-title {
+    --font-size: 6.7vw;
+  }
+}
+@media (max-width: 560px) {
+  #end-section-title {
+    width: 100%;
+    --font-size: 19.5vw;
+  }
+}
+#end-section-title-link {
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
 }
 #end-section-title-link:hover {
   color: var(--color-green);
@@ -1348,22 +1395,87 @@ html.is-goal-window body {
   width: calc(100% - 0.05em);
   top: 0.85em;
   left: 0.05em;
+  transform-origin: left;
   background: var(--color-white);
+}
+html.is-white-bg #end-section-title-top-decoration {
+  background: var(--color-black);
+}
+#end-section-title-bottom-left-decoration {
+  position: absolute;
+  height: 0.07em;
+  width: 0.82em;
+  left: 0.25em;
+  bottom: 0.1em;
+  transform-origin: left;
+  background: var(--color-white);
+}
+html.is-white-bg #end-section-title-bottom-left-decoration {
+  background: var(--color-black);
+}
+#end-section-title-bottom-right-decoration {
+  position: absolute;
+  height: 0.07em;
+  left: 1.78em;
+  width: 2.45em;
+  bottom: 0.1em;
+  transform-origin: left;
+  background: var(--color-white);
+}
+html.is-white-bg #end-section-title-bottom-right-decoration {
+  background: var(--color-black);
 }
 #end-bottom {
-  display: inline-flex;
-  margin-top: 3em;
-  height: 3.2em;
-  padding: 0 1.6em;
-  border-radius: 6.25em;
-  background: var(--color-white);
-  color: var(--color-black);
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  position: absolute;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 1em;
+  height: 3.375em;
+  width: 15em;
+  left: 50%;
+  bottom: calc(var(--vh, 1vh) * 7);
+  transform: translate(-50%);
+  text-align: center;
+  background: #fff;
+  border-radius: 100px;
+  box-shadow: 0 6px 10px #0000000a, 0 2px 4px #0000000a;
+  overflow: hidden;
+  font-size: 1.1em;
+  color: var(--color-black);
+  text-decoration: none;
 }
-
+#end-bottom-text-container {
+  position: relative;
+  overflow: hidden;
+}
+#end-bottom-text {
+  white-space: nowrap;
+  line-height: 1.5;
+  font-size: 0.75em;
+  color: var(--color-black);
+}
+#end-bottom-text:last-child {
+  position: absolute;
+  top: -1.5em;
+}
+.end-bottom-arrow-container {
+  position: relative;
+  overflow: hidden;
+  width: 1em;
+  height: 1em;
+}
+.end-bottom-arrow {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  background: currentColor;
+  clip-path: polygon(40% 0, 60% 0, 60% 55%, 100% 55%, 50% 100%, 0 55%, 40% 55%);
+}
+.end-bottom-arrow:last-child {
+  position: absolute;
+  top: -1em;
+}
 /* FOOTER — Lusion about.css port */
 #footer-section {
   position: relative;
