@@ -1132,7 +1132,7 @@ void main(){
     const earthShow = THREE.MathUtils.clamp(blackFrameShowRatio, 0, 1)
     const earthIn = THREE.MathUtils.clamp(blackFrameInRatio, 0, 1)
     earthBgMesh.position.y = -(10 * (1 - earthShow) + 2.5 + 30 * earthIn)
-    earthBgMesh.scale.setScalar(fit(earthIn, 0, 0.5, 40, 70))
+    earthBgMesh.scale.setScalar(fit(earthIn, 0, 0.5, 58, 85))
     earthBgGroup.rotation.x = fit(earthIn, 0, 0.5, 0, -1)
     earthBgMesh.visible = earthIn < 1 && !isWhiteTunnelActive && !isBlackTunnelActive
 
