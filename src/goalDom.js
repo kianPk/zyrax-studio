@@ -83,7 +83,9 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
     const astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     const toWhite = fit(whiteTunnelRatio, 0, 0.25, 0, 1)
     const global = ranges.progress()
-    const vh = window.innerHeight
+    const vv = window.visualViewport
+    const vh = Math.round(vv?.height || window.innerHeight)
+    const vvTop = Math.round(vv?.offsetTop || 0)
 
     // Pin tunnel once sticky reaches viewport top (after context + cyan line).
     // Skip while goalFrame has the sticky in tablet-window mode.
@@ -111,7 +113,14 @@ export function bindGoalDomScroll(sectionEl, titleEl, stickyEl) {
         } else {
           stickyHomeParent.appendChild(stickyEl)
         }
+        stickyEl.style.top = ''
+        stickyEl.style.height = ''
         window.dispatchEvent(new Event('resize'))
+      }
+      // iOS URL-bar: lock pinned sticky to visualViewport so it doesn't float/gap
+      if (shouldPin) {
+        stickyEl.style.top = `${vvTop}px`
+        stickyEl.style.height = `${vh}px`
       }
       // Match tunnel clear: black title/tunnel → black; white tunnel → white (not page grey)
       stickyEl.style.background =

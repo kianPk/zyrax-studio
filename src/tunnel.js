@@ -71,9 +71,11 @@ async function makeArmbTexture(armUrl, baseUrl) {
   const tex = new THREE.DataTexture(packed, w, h, THREE.RGBAFormat, THREE.UnsignedByteType)
   tex.colorSpace = THREE.NoColorSpace
   tex.flipY = false
-  tex.generateMipmaps = false
-  tex.minFilter = THREE.LinearFilter
+  // Mips keep the distant/small suit sharp instead of shimmering LinearFilter aliasing
+  tex.generateMipmaps = true
+  tex.minFilter = THREE.LinearMipmapLinearFilter
   tex.magFilter = THREE.LinearFilter
+  tex.anisotropy = 8
   tex.wrapS = THREE.ClampToEdgeWrapping
   tex.wrapT = THREE.ClampToEdgeWrapping
   tex.needsUpdate = true
@@ -240,8 +242,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     throw err
   }
   renderer.setClearColor(0x000000, 1)
-  // Mobile: up to 2× for suit/visor; bloom pyramid stays half-res separately
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 2 : 1.5))
+  // Mobile: full DPR (capped 2.5) so suit/visor stay sharp on retina
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 2.5 : 1.75))
   // Lusion Stage3D writes display-referred colors in custom shaders with no
   // Linear→sRGB pass. Keep output linear so the entry suit isn't crushed.
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace
@@ -359,12 +361,19 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       ])
       nor.colorSpace = THREE.NoColorSpace
       nor.flipY = false
-      nor.generateMipmaps = false
-      nor.minFilter = THREE.LinearFilter
+      nor.generateMipmaps = true
+      nor.minFilter = THREE.LinearMipmapLinearFilter
       nor.magFilter = THREE.LinearFilter
+      nor.anisotropy = 8
       partTex[part] = { armb, nor }
     })
   )
+  const maxAniso = renderer.capabilities.getMaxAnisotropy?.() || 8
+  for (const key of Object.keys(partTex)) {
+    const { armb, nor } = partTex[key]
+    if (armb) { armb.anisotropy = Math.min(8, maxAniso); armb.needsUpdate = true }
+    if (nor) { nor.anisotropy = Math.min(8, maxAniso); nor.needsUpdate = true }
+  }
   partTex.helmet_glass = partTex.helmet
 
   const astronautRoot = new THREE.Group()
@@ -595,9 +604,8 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     for (let i = 0; i < BLOCK_COUNT; i++) ids[i] = i
     ig.setAttribute('a_instanceId', new THREE.InstancedBufferAttribute(ids, 1))
     ig.instanceCount = BLOCK_COUNT
-    // Lusion GoalWhiteTunnel: opaque ShaderMaterial (no transparent flag).
-    // Alpha is still written for Stage3D bloom; opaque blending avoids the
-    // washed/glitchy blue arches from blending with white clear.
+    // Opaque like Lusion GoalWhiteTunnel (no transparent). Alpha still feeds bloom.
+    // White high-key wash comes from clearColor=#fff + clearAlpha≈0.3 + MSAA scene RT.
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         u_texture: { value: blockTex },
@@ -1053,6 +1061,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     }
     tunnelGroup.visible = isWhiteTunnelActive && astronautDropRatio < 1
     blackTunnelGroup.visible = isBlackTunnelActive
+    // During white tunnel, let RT clear (#fff, α≈0.3) show in gaps so bloom
+    // washes the corridor. bgPlane writes α=0 and would kill that Lusion wash.
+    bgPlane.visible = !(isWhiteTunnelActive && astronautDropRatio < 1)
 
     // Header contrast only while tunnel sticky is pinned (not during goal copy)
     const header = document.getElementById('header')
@@ -1332,7 +1343,7 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
     let dRatio = whiteTunnelRatio - prevWhiteRatio
     if (Math.abs(dRatio) > 0.08) dRatio = 0
     // Exact Lusion GoalWhiteTunnel efx: sineOut fits, full amount on desktop
-    const efxScale = isMobile ? 0.35 : 1
+    const efxScale = isMobile ? 0 : 0.7
     const zOff = THREE.MathUtils.clamp(
       -dRatio * fit(whiteTunnelRatio, 0, 0.9, 500, 0, easeSineOut) * efxScale,
       -1,
@@ -1344,7 +1355,9 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
       1
     )
     post.setEfxOffset(zOff, rotOff)
-    post.setEfxAmount(fit(whiteTunnelRatio, 0.75, 1, 1, 0) * (isMobile ? 0.4 : 1))
+    // Keep mobile efx very light — velocity blur was smearing the suit into mush
+    // Mobile: no velocity blur in white tunnel — it mush-smeared the suit
+    post.setEfxAmount(isMobile ? 0 : fit(whiteTunnelRatio, 0.75, 1, 1, 0))
     prevWhiteRatio = whiteTunnelRatio
 
     const bgHex =

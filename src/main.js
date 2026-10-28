@@ -30,12 +30,15 @@ window.visualViewport?.addEventListener('scroll', setVh)
 // Softer wheel than default Lenis — closer to Lusion ScrollPane (wheelEaseCoeff 12)
 // Mobile: shorter duration + native-ish touch to cut scroll jank vs multi-WebGL load
 const lenis = new Lenis({
-  duration: isMobile ? 0.85 : 1.35,
+  duration: isMobile ? 0.7 : 1.35,
   easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+  // Mobile: native touch scroll only — Lenis touch sync fought iOS and felt "buggy"
   smoothWheel: !isMobile,
   syncTouch: false,
+  syncTouchLerp: 0,
+  touchInertiaMultiplier: 0,
   wheelMultiplier: isMobile ? 0.9 : 0.82,
-  touchMultiplier: isMobile ? 1.35 : 1.1,
+  touchMultiplier: isMobile ? 1 : 1.1,
 })
 window.lenis = lenis
 let goalAutoScrollSpeed = 0

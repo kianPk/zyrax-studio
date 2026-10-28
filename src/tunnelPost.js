@@ -151,17 +151,27 @@ void main() {
 }
 `
 
-function makeRT(w, h, depth = false) {
+function makeRT(w, h, depth = false, samples = 0) {
   const opts = {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     format: THREE.RGBAFormat,
-    type: THREE.HalfFloatType,
+    // MSAA + HalfFloat is flaky on many GPUs/SwiftShader; byte + samples is reliable
+    type: samples > 0 ? THREE.UnsignedByteType : THREE.HalfFloatType,
     depthBuffer: depth,
     stencilBuffer: false,
+    // MSAA softens cobalt/white edges into white clear (high-key wash) + suit edges
+    samples,
   }
   const rt = new THREE.WebGLRenderTarget(w, h, opts)
-  if (depth) {
+  if (depth && samples === 0) {
+    // Separate depth texture only on non-MSAA targets (efx RT path uses scene depth —
+    // with MSAA, Three resolves depth into depthBuffer; attach texture when supported)
+    rt.depthTexture = new THREE.DepthTexture(w, h)
+    rt.depthTexture.type = THREE.UnsignedShortType
+  }
+  if (depth && samples > 0) {
+    // Still attach depthTexture — Three r170 resolves MSAA depth into it when possible
     rt.depthTexture = new THREE.DepthTexture(w, h)
     rt.depthTexture.type = THREE.UnsignedShortType
   }
@@ -173,7 +183,8 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
   renderer.getSize(size)
   let isMobileBloom = !!isMobile
 
-  let sceneRT = makeRT(1, 1, true)
+  // 4x MSAA scene buffer — critical for white-tunnel wash + mobile suit edges
+  let sceneRT = makeRT(1, 1, true, 4)
   let glassBgRT = makeRT(1, 1, false)
   let efxRT = makeRT(1, 1, false)
   let highPassRT = makeRT(1, 1, false)
@@ -291,10 +302,14 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
   let haloMaskInner = 0.3
   let haloMaskOuter = 0.5
   let clearAlpha = 0
+  // Must match GoalTunnels bgColor during white tunnel (#fff) so gap fragments
+  // bloom as soft white (highPass = rgb * a). Black clear killed the Lusion wash.
+  let clearColor = new THREE.Color(0x000000)
   let enabled = true
   let w = 1
   let h = 1
   let whiteBloomDamp = 1
+  let whiteTunnelBloom = false
 
   const dirX = new THREE.Vector2(1, 0)
   const dirY = new THREE.Vector2(0, 1)
@@ -314,17 +329,16 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
   const resize = (nw, nh) => {
     w = Math.max(1, Math.floor(nw))
     h = Math.max(1, Math.floor(nh))
-    // Mobile: half-res scene + efx buffers — biggest GPU win for scroll smoothness
-    // Mobile: keep scene near full-res so astronaut suit stays sharp; bloom pyramid
-    // still starts at half-res below. Half-res scene was the main "بی‌کیفیت" culprit.
-    const sceneScale = isMobileBloom ? 0.85 : 1
+    // Full-res scene on all devices — 0.85 RT was soft/aliased astronaut on phones.
+    // Bloom pyramid stays half/quarter-res below for fill-rate.
+    const sceneScale = 1
     sceneRT.setSize(Math.max(1, Math.floor(w * sceneScale)), Math.max(1, Math.floor(h * sceneScale)))
     glassBgRT.setSize(sceneRT.width, sceneRT.height)
     efxRT.setSize(sceneRT.width, sceneRT.height)
     // Lusion Bloom (non-FFT path): high-pass + pyramid start at half-res
     // Desktop Lusion uses FFT at powerTwoCeiling(half)>>1 — we keep half-res pyramid
     // but scale weights like the FFT amount formula so bloomAmount=30 stays soft.
-    const bloomStart = isMobileBloom ? 4 : 2
+    const bloomStart = isMobileBloom ? 3 : 2
     let rw = Math.max(1, Math.ceil(w / bloomStart))
     let rh = Math.max(1, Math.ceil(h / bloomStart))
     highPassRT.setSize(rw, rh)
@@ -385,10 +399,10 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
         ? THREE.MathUtils.lerp(1, 3, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
         : 1
 
+    whiteTunnelBloom = !!isWhiteTunnelActive
     if (isWhiteTunnelActive) {
       // Exact Lusion: fit(whiteFrameRatio, 0, .05, 4, 2) then wait peak 20
-      // Our gaussian bloom reads hotter than Lusion FFT — keep curve but damp weights below
-      const waitBloomPeak = isMobile ? 8 : 16
+      const waitBloomPeak = isMobile ? 12 : 20
       bloomAmount =
         astronautDropRatio < 1
           ? THREE.MathUtils.lerp(
@@ -401,23 +415,26 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
               waitBloomPeak,
               THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
             )
-      // Opaque white-tunnel needs enough bloom for the high-key wash Lusion gets
-      // from FFT, without re-crushing the suit into a silhouette.
-      bloomRadius = isMobile ? 0.28 : 0.42
-      highPassMultiplier = isMobile ? 0.95 : 1.0
-      whiteBloomDamp = isMobile ? 0.55 : 0.72
-      // Slightly higher clearAlpha so white fills gaps between blocks
+      // Soft radius so cobalt walls wash into white like Lusion FFT star kernel
+      bloomRadius = isMobile ? 0.45 : 0.62
+      highPassMultiplier = isMobile ? 1.2 : 1.35
+      // Gap clear must bloom: damp near 1 so white*clearAlpha reads as high-key wash
+      whiteBloomDamp = isMobile ? 1.15 : 1.35
+      // Exact Lusion: fit(whiteTunnelWaitRatio, 0, .1, .3, 0)
+      // MSAA resolve blends fragment edges into this white clear → soft wash
       clearAlpha = THREE.MathUtils.lerp(
-        0.45,
+        0.38,
         0,
         THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
       )
+      clearColor.set('#ffffff')
     } else {
       whiteBloomDamp = 1
       // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel
       const t = THREE.MathUtils.clamp(blackTitleRatio / 0.25, 0, 1)
       bloomAmount = THREE.MathUtils.lerp(isMobile ? 22 : 30, isMobile ? 5 : 6, t)
       clearAlpha = 0
+      clearColor.set('#000000')
     }
 
     // Wider soft ring on entry title beat (Lusion FFT star reads as a large oval)
@@ -428,11 +445,11 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     haloRGBShift = onEntryTitle ? 0.04 : isMobile ? 0.012 : 0.02
     haloMaskInner = onEntryTitle ? 0.15 : 0.3
     haloMaskOuter = onEntryTitle ? 0.75 : 0.5
-    // Desktop approximates FFT star bloom with a softer gaussian radius so
-    // speculars (visor glint) don't become hard rectangular blobs.
-    // Mobile: tiny radius — full pyramid bloom is the lag hotspot
-    bloomRadius = isMobile ? 0.15 : onEntryTitle ? 0.55 : 0.5
-    highPassMultiplier = onEntryTitle ? 1.15 : 1
+    // Do NOT stomp white-tunnel bloomRadius/highPass — that killed the wash.
+    if (!isWhiteTunnelActive) {
+      bloomRadius = isMobile ? 0.15 : onEntryTitle ? 0.55 : 0.5
+      highPassMultiplier = onEntryTitle ? 1.15 : 1
+    }
     efxActive = isBlackTunnelActive || isWhiteTunnelActive
   }
 
@@ -464,7 +481,9 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
     const prevAutoClear = renderer.autoClear
     renderer.setRenderTarget(sceneRT)
     renderer.autoClear = true
-    renderer.setClearColor(scene.background?.isColor ? scene.background.getHex() : 0x000000, clearAlpha)
+    // White tunnel: clear RGB must be #fff with clearAlpha≈0.3 so gaps bloom white.
+    // Previously fell back to black (scene.background is null) and killed the wash.
+    renderer.setClearColor(clearColor, clearAlpha)
     renderer.clear()
     const prevBg = scene.background
     scene.background = null
