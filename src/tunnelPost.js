@@ -391,13 +391,18 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
       )
       hs = Math.max(hs, entryRing * Math.min(1, blackFrameInRatio))
     }
-    haloStrength = hs
 
     // bloomSaturation fit(blackTunnelRatio, 0, .7, 1, 3)
     bloomSaturation =
       blackTunnelRatio < 1
         ? THREE.MathUtils.lerp(1, 3, THREE.MathUtils.clamp(blackTunnelRatio / 0.7, 0, 1))
         : 1
+
+    const onGlassBreak =
+      isWhiteTunnelActive && astronautDropRatio > 0.001 && astronautDropRatio < 1
+    const glassGlow = onGlassBreak
+      ? Math.sin(Math.min(astronautDropRatio, 1) * Math.PI)
+      : 0
 
     whiteTunnelBloom = !!isWhiteTunnelActive
     if (isWhiteTunnelActive) {
@@ -420,6 +425,14 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
       highPassMultiplier = isMobile ? 1.2 : 1.35
       // Gap clear must bloom: damp near 1 so white*clearAlpha reads as high-key wash
       whiteBloomDamp = isMobile ? 1.15 : 1.35
+      // Glass punch: Lusion frameBg glow goes blue (#1a2ffb) — lift bloom + halo
+      // so shards read as that crystalline pink/blue wash (not a flat white pane).
+      if (onGlassBreak) {
+        bloomAmount = Math.max(bloomAmount, isMobile ? 8 : 14) * (0.65 + 0.55 * glassGlow)
+        bloomRadius = Math.max(bloomRadius, isMobile ? 0.55 : 0.72)
+        highPassMultiplier = Math.max(highPassMultiplier, 1.45)
+        hs = (isMobile ? 0.1 : 0.16) * glassGlow
+      }
       // Exact Lusion: fit(whiteTunnelWaitRatio, 0, .1, .3, 0)
       clearAlpha = THREE.MathUtils.lerp(
         astronautDropRatio < 1 ? 0.38 : 0.3,
@@ -437,14 +450,23 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
       clearColor.set('#000000')
     }
 
+    haloStrength = hs
+
     // Wider soft ring on entry title beat (Lusion FFT star reads as a large oval)
     const onEntryTitle =
       !isWhiteTunnelActive && blackFrameInRatio > 0.55 && blackTunnelRatio < 0.2
-    haloWidth = onEntryTitle ? 0.85 : 0.6
-    // Stage3D default haloRGBShift is 0.02 — entry needs more for the rainbow ring
-    haloRGBShift = onEntryTitle ? 0.04 : isMobile ? 0.012 : 0.02
-    haloMaskInner = onEntryTitle ? 0.15 : 0.3
-    haloMaskOuter = onEntryTitle ? 0.75 : 0.5
+    if (onGlassBreak) {
+      haloWidth = 0.7
+      haloRGBShift = isMobile ? 0.02 : 0.035
+      haloMaskInner = 0.2
+      haloMaskOuter = 0.65
+    } else {
+      haloWidth = onEntryTitle ? 0.85 : 0.6
+      // Stage3D default haloRGBShift is 0.02 — entry needs more for the rainbow ring
+      haloRGBShift = onEntryTitle ? 0.04 : isMobile ? 0.012 : 0.02
+      haloMaskInner = onEntryTitle ? 0.15 : 0.3
+      haloMaskOuter = onEntryTitle ? 0.75 : 0.5
+    }
     // Do NOT stomp white-tunnel bloomRadius/highPass — that killed the wash.
     if (!isWhiteTunnelActive) {
       bloomRadius = isMobile ? 0.15 : onEntryTitle ? 0.55 : 0.5

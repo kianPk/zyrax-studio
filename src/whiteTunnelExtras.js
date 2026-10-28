@@ -71,7 +71,7 @@ void main(){
   float ratio=fract(t);
   vec4 cycleRands=hash42(vec2(cycle,instanceId));
       pos.xy=rotate(pos.xy,instanceRands.z*6.28+sign(cycleRands.z-.5)*u_time*mix(.5,1.,cycleRands.y))
-    *linearStep(instanceRands.w*0.5,instanceRands.w*0.5+0.5,u_activeRatio)*0.55;
+    *linearStep(instanceRands.w*0.5,instanceRands.w*0.5+0.5,u_activeRatio)*0.35;
   float yLimit=7.0/u_aspect;
   vec3 instancePos=vec3(mix(-5.,5.,cycleRands.x),yLimit*mix(-1.0,1.0,ratio),20.+instanceId/float(COUNT));
   pos+=instancePos;
@@ -359,13 +359,7 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
   diamondMesh.frustumCulled = false
   diamondMesh.renderOrder = 20
   diamondMesh.visible = false
-  // Lusion particles use additive-ish presence; One/Zero can vanish on some GPUs —
-  // NormalBlending keeps diamonds readable over the wait bloom.
-  diamondMat.blending = THREE.NormalBlending
-  diamondMat.blendSrc = THREE.SrcAlphaFactor
-  diamondMat.blendDst = THREE.OneMinusSrcAlphaFactor
-  diamondMat.blendSrcAlpha = THREE.SrcAlphaFactor
-  diamondMat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor
+  // Exact Lusion CustomBlending (One/Zero + alpha One/One) — reads as refractive sparkle
   container.add(diamondMesh)
 
   stickerMesh.renderOrder = 15

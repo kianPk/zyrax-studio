@@ -309,22 +309,74 @@ export async function createGoalTunnel(canvas, sectionEl, titleEl) {
   const blend2 = new THREE.InstancedBufferAttribute(new Float32Array([90, 91, 0]), 3)
   blend2.setUsage(THREE.DynamicDrawUsage)
 
-  // feedback ping-pong (never sample RT while rendering into it)
-  // mipmaps approximate Lusion's blur before astronaut env sampling
+  // feedback ping-pong + Lusion dual blur (16 then 4) before astronaut env sampling
   const makeFeedbackRT = () => {
     const rt = new THREE.WebGLRenderTarget(1, 1, {
-      minFilter: THREE.LinearMipmapLinearFilter,
+      minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
-      generateMipmaps: true,
+      generateMipmaps: false,
     })
     rt.texture.wrapS = rt.texture.wrapT = THREE.MirroredRepeatWrapping
     return rt
   }
   const feedbackRT = makeFeedbackRT()
   const feedbackRT2 = makeFeedbackRT()
+  const feedbackBlurRT = makeFeedbackRT()
   let feedbackRead = feedbackRT
   let feedbackWrite = feedbackRT2
+  const feedbackBlurFrag = /* glsl */ `
+uniform sampler2D u_texture;
+uniform vec2 u_direction;
+uniform vec2 u_resolution;
+varying vec2 v_uv;
+void main() {
+  vec2 texel = u_direction / u_resolution;
+  vec3 c = texture2D(u_texture, v_uv).rgb * 0.227027;
+  c += texture2D(u_texture, v_uv + texel * 1.384615).rgb * 0.316216;
+  c += texture2D(u_texture, v_uv - texel * 1.384615).rgb * 0.316216;
+  c += texture2D(u_texture, v_uv + texel * 3.230769).rgb * 0.070270;
+  c += texture2D(u_texture, v_uv - texel * 3.230769).rgb * 0.070270;
+  gl_FragColor = vec4(c, 1.0);
+}`
+  const feedbackBlurQuadVert = /* glsl */ `
+varying vec2 v_uv;
+void main() {
+  v_uv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}`
+  const feedbackBlurMat = new THREE.ShaderMaterial({
+    uniforms: {
+      u_texture: { value: null },
+      u_direction: { value: new THREE.Vector2(1, 0) },
+      u_resolution: { value: new THREE.Vector2(1, 1) },
+    },
+    vertexShader: feedbackBlurQuadVert,
+    fragmentShader: feedbackBlurFrag,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const feedbackBlurCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  const feedbackBlurScene = new THREE.Scene()
+  const feedbackBlurQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), feedbackBlurMat)
+  feedbackBlurScene.add(feedbackBlurQuad)
+  const blurFeedback = (src, radius) => {
+    const w = Math.max(1, src.width)
+    const h = Math.max(1, src.height)
+    feedbackBlurMat.uniforms.u_resolution.value.set(w, h)
+    feedbackBlurMat.uniforms.u_texture.value = src.texture
+    feedbackBlurMat.uniforms.u_direction.value.set(radius, 0)
+    renderer.setRenderTarget(feedbackBlurRT)
+    renderer.clear()
+    renderer.render(feedbackBlurScene, feedbackBlurCam)
+    feedbackBlurMat.uniforms.u_texture.value = feedbackBlurRT.texture
+    feedbackBlurMat.uniforms.u_direction.value.set(0, radius)
+    renderer.setRenderTarget(src)
+    renderer.clear()
+    renderer.render(feedbackBlurScene, feedbackBlurCam)
+    renderer.setRenderTarget(null)
+  }
 
   const sharedUniforms = {
     u_animationPositionTexture: { value: animPosTex },
@@ -1011,6 +1063,7 @@ void main(){
     if (feedbackRT.width !== fw || feedbackRT.height !== fh) {
       feedbackRT.setSize(fw, fh)
       feedbackRT2.setSize(fw, fh)
+      feedbackBlurRT.setSize(fw, fh)
     }
   }
   resize()
@@ -1189,9 +1242,10 @@ void main(){
       document.documentElement.style.background = ''
       document.body.style.background = ''
     } else if (isWhiteTunnelActive && astronautDropRatio >= 1) {
-      // Wave wait sits on the white page (footer rising) like Lusion
-      document.documentElement.style.background = '#ffffff'
-      document.body.style.background = '#ffffff'
+      // Lusion isUIBgBlack through whiteFrameOut→astronautWait — black under
+      // clearAlpha→0 so stickers/diamonds edge-fade correctly before footer rises
+      document.documentElement.style.background = '#000000'
+      document.body.style.background = '#000000'
     } else if (isWhiteTunnelActive) {
       document.documentElement.style.background = '#ffffff'
       document.body.style.background = '#ffffff'
@@ -1502,8 +1556,13 @@ void main(){
     post.setEfxAmount(isMobile ? 0 : fit(whiteTunnelRatio, 0.75, 1, 1, 0))
     prevWhiteRatio = whiteTunnelRatio
 
-    const bgHex =
-      isWhiteTunnelActive || whiteTunnelWaitRatio > 0 ? '#ffffff' : '#000000'
+    // Stickers/diamonds mix edges into properties.bgColor (black after drop)
+    const extrasBg =
+      isWhiteTunnelActive && astronautDropRatio >= 1
+        ? '#000000'
+        : isWhiteTunnelActive
+          ? '#ffffff'
+          : '#000000'
     // Portrait camera.aspect (~0.46) blows sticker yLimit off-screen — clamp like a landscape frustum
     const extrasAspect = isMobile
       ? Math.max(camera.aspect, 0.95)
@@ -1512,7 +1571,7 @@ void main(){
     whiteExtras.update({
       whiteTunnelWaitRatio: astronautDropRatio >= 1 ? whiteTunnelWaitRatio : 0,
       aspect: extrasAspect,
-      bg: bgHex,
+      bg: extrasBg,
     })
   }
 
@@ -1558,7 +1617,7 @@ void main(){
     if (isBlackTunnelActive) {
       cameraDollyZoomFovOffset =
         Math.sin(blackTunnelRatio * 10 + tunnelTime) *
-        7.5 *
+        (isMobile ? 4.5 : 7.5) *
         smoothstep(0, 0.2, blackTunnelRatio)
     }
     applyCamera()
@@ -1708,6 +1767,9 @@ void main(){
       renderer.setClearColor(0x000000, 0)
       renderer.clear()
       renderer.render(scene, camera)
+      // Exact Lusion GoalTunnelAstronauts: blur.blur(16,.5) then blur(4,.5)
+      blurFeedback(feedbackWrite, isMobile ? 10 : 16)
+      blurFeedback(feedbackWrite, isMobile ? 3 : 4)
       renderer.setRenderTarget(null)
       blackUniforms.u_resolution.value.copy(prevRes)
       const tmp = feedbackRead
@@ -1757,6 +1819,8 @@ void main(){
       brokenGlass?.dispose()
       feedbackRT.dispose()
       feedbackRT2.dispose()
+      feedbackBlurRT.dispose()
+      feedbackBlurMat.dispose()
       post.destroy()
       renderer.dispose()
     },
