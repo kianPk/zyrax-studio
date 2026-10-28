@@ -17,17 +17,7 @@
     <header id="header">
       <div id="header-container">
         <div id="header-background"></div>
-        <a id="header-logo" href="#top" aria-label="Zyrax home">ZYRAX</a>
         <div id="header-right">
-          <button id="header-right-sound-btn" type="button" aria-label="Sound" data-sound>
-            <svg class="sound-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
-              <path d="M4 10v4" />
-              <path d="M8 7v10" />
-              <path d="M12 4v16" />
-              <path d="M16 7v10" />
-              <path d="M20 10v4" />
-            </svg>
-          </button>
           <a id="header-right-talk-btn" href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">
             <span id="header-right-talk-btn-text">LET'S TALK</span>
             <span id="header-right-talk-btn-dots"></span>
@@ -267,27 +257,52 @@
         </div>
 
         <div id="footer-section" class="section">
+          <div id="footer-bg" aria-hidden="true"></div>
+          <div id="footer-top"></div>
           <div id="footer-middle">
             <div id="footer-middle-contact">
-              <p>Kian Zarandi<br />@kianPk<br />Tehran · Remote<br />Worldwide</p>
-              <p>
-                <a href="https://github.com/kianPk" target="_blank" rel="noreferrer">GitHub</a><br />
-                <a href="https://t.me/Kian_asli" target="_blank" rel="noreferrer">Telegram</a><br />
-                <a href="https://www.zyrax.ir" target="_blank" rel="noreferrer">Web</a>
-              </p>
-              <div id="footer-newsletter">
-                <h3>Subscribe to our newsletter</h3>
-                <form action="mailto:kianzarandi701@gmail.com">
-                  <input type="email" placeholder="Your email" required />
-                  <button type="submit" aria-label="Subscribe">→</button>
+              <div id="footer-contact-address">
+                <div class="footer-address-line-wrapper"><p class="footer-address-line">Kian Zarandi</p></div>
+                <div class="footer-address-line-wrapper"><p class="footer-address-line">@kianPk</p></div>
+                <div class="footer-address-line-wrapper"><p class="footer-address-line">Tehran · Remote</p></div>
+                <div class="footer-address-line-wrapper"><p class="footer-address-line">Available worldwide</p></div>
+              </div>
+              <div id="footer-contact-socials">
+                <a class="footer-socials-line-wrapper" href="https://github.com/kianPk" target="_blank" rel="noreferrer"><span class="footer-socials-text">GitHub</span></a>
+                <a class="footer-socials-line-wrapper" href="https://t.me/Kian_asli" target="_blank" rel="noreferrer"><span class="footer-socials-text">Telegram</span></a>
+                <a class="footer-socials-line-wrapper" href="https://www.zyrax.ir" target="_blank" rel="noreferrer"><span class="footer-socials-text">Website</span></a>
+              </div>
+              <div id="footer-contact-enquires">
+                <a id="footer-enquires-link" href="mailto:kianzarandi701@gmail.com">Business enquiries</a>
+              </div>
+              <div id="footer-contact-business">
+                <a id="footer-business-link" href="https://kianpk.github.io/zyrax-drive/" target="_blank" rel="noreferrer">R&amp;D — Zyrax Drive</a>
+              </div>
+            </div>
+            <div id="footer-middle-newsletter">
+              <div id="footer-newsletter-header">
+                <span class="footer-newsletter-line">Stay in</span>
+                <span class="footer-newsletter-line">the loop</span>
+              </div>
+              <div id="footer-newsletter-input">
+                <div id="footer-newsletter-bg" aria-hidden="true"></div>
+                <form id="footer-newsletter-form" action="mailto:kianzarandi701@gmail.com">
+                  <input id="footer-newsletter-input-field" type="email" placeholder="Your email" required />
+                  <button id="footer-newsletter-input-arrow" type="submit" aria-label="Subscribe">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12h17M13 4.5 20.5 12 13 19.5"/></svg>
+                  </button>
                 </form>
               </div>
             </div>
-            <div id="footer-emails">
-              <a href="mailto:kianzarandi701@gmail.com">kianzarandi701@gmail.com</a>
-              <a href="https://kianpk.github.io/zyrax-drive/" target="_blank" rel="noreferrer">R&amp;D: Zyrax Drive</a>
-            </div>
-            <p id="footer-credit">Built by Kian · layout homage to lusion.co</p>
+          </div>
+          <div id="footer-bottom">
+            <div id="footer-bottom-copyright">© 2026 Zyrax · Kian Zarandi</div>
+            <a id="footer-bottom-labs" href="https://github.com/kianPk" target="_blank" rel="noreferrer">Open experiments on GitHub</a>
+            <div id="footer-bottom-tagline">3D · Interactive · Web</div>
+            <button id="footer-bottom-up" type="button" aria-label="Back to top" data-scroll-top>
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
           </div>
         </div>
       </div>

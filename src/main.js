@@ -319,9 +319,12 @@ document.querySelector('[data-reel]')?.addEventListener('click', (e) => {
   window.open('https://kianpk.github.io/zyrax-drive/', '_blank', 'noreferrer')
 })
 
-// Sound toggle handled by createSiteAudio()
-
 document.querySelector('#end-bottom')?.addEventListener('click', (e) => {
   e.preventDefault()
   lenis.scrollTo('#footer-section')
+})
+
+document.querySelector('#footer-bottom-up')?.addEventListener('click', (e) => {
+  e.preventDefault()
+  lenis.scrollTo(0)
 })

@@ -374,8 +374,8 @@ export async function createWhiteTunnelExtras(scene, { base, isMobile, sharedTim
 
   return {
     update({ whiteTunnelWaitRatio = 0, aspect = 1, bg = '#000000' } = {}) {
-      // Come in a bit earlier so the wait finale isn't an empty black frame
-      const activeRatio = fit(whiteTunnelWaitRatio, 0, 0.12, 0, 1)
+      // Exact Lusion: fit(whiteTunnelWaitRatio, 0, 0.2, 0, 1)
+      const activeRatio = fit(whiteTunnelWaitRatio, 0, 0.2, 0, 1)
       const show = activeRatio > 0
       container.visible = show
       stickerMesh.visible = show

@@ -1,6 +1,6 @@
 /**
- * Lusion-style site audio — music beds + UI SFX, gated by the sound button.
- * Assets mirrored from https://lusion.dev/assets/audios/
+ * Lusion-style site audio — music beds + UI SFX.
+ * Always on: unlocks on first user gesture, no mute toggle.
  */
 const BASE = `${import.meta.env.BASE_URL}assets/audios/`
 
@@ -30,7 +30,6 @@ function makeAudio(src, { loop = false, volume = 1 } = {}) {
 }
 
 export function createSiteAudio() {
-  const btn = document.getElementById('header-right-sound-btn')
   const music = {}
   for (const [id, file] of Object.entries(MUSIC)) {
     music[id] = makeAudio(`${BASE}${file}`, { loop: true, volume: 0 })
@@ -40,7 +39,8 @@ export function createSiteAudio() {
     sfx[id] = files.map((f) => makeAudio(`${BASE}${f}`, { loop: false, volume: 0.85 }))
   }
 
-  let enabled = false
+  // Always enabled — only browser autoplay policy can delay the first unlock
+  const enabled = true
   let unlocked = false
   let currMusicId = null
   let fadeFrom = null
@@ -52,15 +52,14 @@ export function createSiteAudio() {
   const unlock = async () => {
     if (unlocked) return
     unlocked = true
-    // Warm decode with a silent play/pause on music bed
     try {
       const probe = music.generic
       probe.volume = 0
       await probe.play()
       probe.pause()
       probe.currentTime = 0
+      if (!currMusicId) fadeToMusic('generic', 0.8)
     } catch {
-      /* autoplay policy — wait for next gesture */
       unlocked = false
     }
   }
@@ -76,18 +75,6 @@ export function createSiteAudio() {
     a.play().catch(() => {})
   }
 
-  const setEnabled = (on) => {
-    enabled = !!on
-    btn?.classList.toggle('is-on', enabled)
-    if (enabled) {
-      unlock().then(() => {
-        if (!currMusicId) fadeToMusic('generic', 0.8)
-      })
-    } else if (currMusicId && music[currMusicId]) {
-      music[currMusicId].volume = 0
-    }
-  }
-
   const fadeToMusic = (id, dur = 1.2) => {
     if (!music[id] || currMusicId === id) return
     fadeFrom = currMusicId
@@ -97,9 +84,7 @@ export function createSiteAudio() {
     currMusicId = id
     const next = music[id]
     next.volume = 0
-    if (enabled && unlocked) {
-      next.play().catch(() => {})
-    }
+    if (unlocked) next.play().catch(() => {})
   }
 
   const update = (dt) => {
@@ -108,31 +93,28 @@ export function createSiteAudio() {
       fadeT = Math.min(1, fadeT + dt / fadeDur)
       const t = fadeT * fadeT * (3 - 2 * fadeT)
       if (fadeFrom && music[fadeFrom]) {
-        music[fadeFrom].volume = enabled ? (1 - t) : 0
+        music[fadeFrom].volume = 1 - t
         if (t >= 1) {
           music[fadeFrom].pause()
           music[fadeFrom].currentTime = 0
         }
       }
       if (music[fadeTo]) {
-        music[fadeTo].volume = enabled ? t : 0
-        if (enabled && music[fadeTo].paused) music[fadeTo].play().catch(() => {})
+        music[fadeTo].volume = t
+        if (music[fadeTo].paused) music[fadeTo].play().catch(() => {})
       }
       if (t >= 1) {
         fadeFrom = null
         fadeTo = null
       }
     } else if (currMusicId && music[currMusicId]) {
-      music[currMusicId].volume = enabled ? 1 : 0
-      if (enabled && music[currMusicId].paused) {
-        music[currMusicId].play().catch(() => {})
-      }
+      music[currMusicId].volume = 1
+      if (music[currMusicId].paused) music[currMusicId].play().catch(() => {})
     }
   }
 
   let brokenGlassStep = 0
 
-  /** Map goal phase → Lusion music bed */
   const syncGoalPhase = (phase) => {
     if (!enabled) return
     if (phase === 'window') fadeToMusic('generic', 1.0)
@@ -141,10 +123,6 @@ export function createSiteAudio() {
     else fadeToMusic('generic', 1.2)
   }
 
-  /**
-   * Lusion HomePageAudios glass + end bed:
-   * arm glass SFX on the rising edge of astronautDrop, then generic_end.
-   */
   const syncTunnelAudio = ({
     blackFrameInRatio = 0,
     blackTunnelRatio = 0,
@@ -172,31 +150,28 @@ export function createSiteAudio() {
     }
   }
 
-  btn?.addEventListener('click', async () => {
-    await unlock()
-    setEnabled(!enabled)
-    playSfx('click')
-  })
+  document
+    .querySelectorAll('#header-right-talk-btn, #header-right-menu-btn, .header-menu-link')
+    .forEach((el) => {
+      el.addEventListener('mouseenter', () => playSfx('hover'))
+      el.addEventListener('click', () => playSfx('click'))
+    })
 
-  // Hover/click SFX on primary chrome
-  document.querySelectorAll('#header-right-talk-btn, #header-right-menu-btn, .header-menu-link').forEach((el) => {
-    el.addEventListener('mouseenter', () => playSfx('hover'))
-    el.addEventListener('click', () => playSfx('click'))
-  })
-
-  // First pointer unlocks AudioContext-like gesture
   const onceUnlock = () => {
     unlock()
-    window.removeEventListener('pointerdown', onceUnlock)
   }
   window.addEventListener('pointerdown', onceUnlock, { passive: true })
+  window.addEventListener('wheel', onceUnlock, { passive: true, once: true })
+  window.addEventListener('keydown', onceUnlock, { passive: true, once: true })
+  // Try immediate unlock (works when autoplay policy allows)
+  unlock()
 
   return {
     update,
     syncGoalPhase,
     syncTunnelAudio,
     playSfx,
-    setEnabled,
+    setEnabled() {},
     get enabled() {
       return enabled
     },

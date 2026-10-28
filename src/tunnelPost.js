@@ -421,13 +421,13 @@ export function createTunnelPost(renderer, scene, camera, { isMobile = false } =
       // Gap clear must bloom: damp near 1 so white*clearAlpha reads as high-key wash
       whiteBloomDamp = isMobile ? 1.15 : 1.35
       // Exact Lusion: fit(whiteTunnelWaitRatio, 0, .1, .3, 0)
-      // MSAA resolve blends fragment edges into this white clear → soft wash
       clearAlpha = THREE.MathUtils.lerp(
-        0.38,
+        astronautDropRatio < 1 ? 0.38 : 0.3,
         0,
         THREE.MathUtils.clamp(whiteTunnelWaitRatio / 0.1, 0, 1)
       )
-      clearColor.set('#ffffff')
+      // Exact Lusion: #fff while flying, #000 once dropped (wave wait)
+      clearColor.set(astronautDropRatio < 1 ? '#ffffff' : '#000000')
     } else {
       whiteBloomDamp = 1
       // fit(blackTitleRatio, 0, .25, 30, 6) — stays at 6 through black tunnel

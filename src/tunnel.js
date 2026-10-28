@@ -828,6 +828,10 @@ void main(){
   let freezeRatio = 0
   let autoScrollSpeed = 0
   let whiteTunnelAstronautOutRatio = 0
+  // Lusion GoalTunnelAstronauts.extraCameraViewportOffset — pans while dropping out
+  let camViewOffsetX = 0
+  let camViewOffsetY = 0
+  let dropScrollPx = 0
   window.addEventListener(
     'pointermove',
     (e) => {
@@ -840,7 +844,7 @@ void main(){
   window.addEventListener('pointerup', () => { pointerDown = false }, { passive: true })
   window.addEventListener('pointercancel', () => { pointerDown = false }, { passive: true })
 
-  /** Port of Lusion CameraControls: dolly-zoom + mouse look. */
+  /** Port of Lusion CameraControls: dolly-zoom + mouse look + viewOffset. */
   const applyCamera = () => {
     camera.near = 1
     camera.far = 200
@@ -861,13 +865,19 @@ void main(){
     camera.translateZ(n)
     camera.fov = baseFov
     cameraDistance += n
+    // Lusion setViewOffset — drop/wait scroll pans the waving astronaut
+    const vw = Math.max(1, renderer.domElement.width || window.innerWidth)
+    const vhBuf = Math.max(1, renderer.domElement.height || window.innerHeight)
+    if (Math.abs(camViewOffsetX) > 0.25 || Math.abs(camViewOffsetY) > 0.25) {
+      camera.setViewOffset(vw, vhBuf, camViewOffsetX, camViewOffsetY, vw, vhBuf)
+    } else {
+      camera.clearViewOffset()
+    }
     // Pull to look point, apply look, push back (Lusion CameraControls)
     camera.translateZ(cameraDistance * -1)
-    // Mobile: softer look so portrait framing stays stable
     const lookStrength = isMobile ? cameraLookStrength * 0.35 : cameraLookStrength
     const lookTargetX = Math.max(-1, Math.min(1, mouseY)) * lookStrength
     const lookTargetY = Math.max(-1, Math.min(1, -mouseX)) * lookStrength
-    // Lusion: += (target-current) * cameraLookEaseDamp (per-frame damp ~0.1)
     cameraLookX += (lookTargetX - cameraLookX) * cameraLookEaseDamp
     cameraLookY += (lookTargetY - cameraLookY) * cameraLookEaseDamp
     tmpEuler.set(cameraLookX, cameraLookY, 0)
@@ -1034,6 +1044,40 @@ void main(){
     astronautDropRatio = ranges.between('whiteFrameBreak', 'astronautDrop').ratio
     whiteTunnelWaitRatio = ranges.range('astronautWait')?.ratio ?? 0
     whiteTunnelAstronautOutRatio = ranges.between('whiteFrameBreak', 'astronautWait').ratio
+    // Exact Lusion: extraCameraViewportOffset + cameraViewportOffset
+    {
+      const dropPx = ranges.range('astronautDrop')
+      const ce = Math.max(0, dropPx.pixel || 0)
+      dropScrollPx = ce
+      const vwPx = window.innerWidth || 1
+      const vhLocal = window.innerHeight || 1
+      const outEl =
+        sectionEl.querySelector('#home-goal-image-out') ||
+        sectionEl.querySelector('#home-goal-image-out-inner')
+      const w = outEl?.getBoundingClientRect?.()
+      const centerDelta = w
+        ? w.left + w.width * 0.5 - vwPx * 0.5
+        : 0
+      const extraX = fit(
+        astronautDropRatio,
+        0,
+        1,
+        0,
+        centerDelta,
+        easeCubicInOut
+      )
+      const extraY = -ce
+      // E = fit(offsetY, whiteFrameOut.from→to, 1, 0)
+      const E = 1 - whiteFrameOutRatio
+      const te = dropPx.ratio
+      const g = te < 1 && w ? vwPx * 0.5 - w.left - w.width * 0.5 : 0
+      const K = vhLocal * 0.2 * (1 - Math.min(1, blackFrameShowRatio))
+      // Frame-lock Y (Lusion v with scroll cancelled once u tracks offsetY)
+      let v = w ? -(w.top + K + w.height * 0.5 - vhLocal * 0.5) : 0
+      if (te >= 1) v = THREE.MathUtils.clamp(v, -vhLocal * 0.35, vhLocal * 0.35)
+      camViewOffsetX = g * (1 - E) + extraX
+      camViewOffsetY = v * (1 - E) + extraY
+    }
 
     isBlackTitleActive = blackTitleRatio < 1
     isBlackTunnelActive = blackTunnelRatio < 1 && !isBlackTitleActive
@@ -1114,27 +1158,22 @@ void main(){
       isWhiteTunnelActive && astronautDropRatio < 1 ? '#6a7f94' : '#566d80'
     )
 
-    // Phase colors — white through glass + wave wait; black only for title/tunnel
-    const inWhiteOutro = isWhiteTunnelActive || whiteTunnelWaitRatio > 0
-    const bg = new THREE.Color(
-      inWhiteOutro && (astronautDropRatio < 1 || whiteTunnelWaitRatio > 0)
-        ? '#ffffff'
-        : isBlackTunnelActive || isBlackTitleActive
-          ? '#000000'
-          : '#ffffff'
-    )
-    // After glass: Lusion clears white→transparent so the waving astronaut sits on the page
-    if (isWhiteTunnelActive && astronautDropRatio >= 1) {
-      bg.set('#ffffff')
+    // Exact Lusion GoalTunnels.update bgColor:
+    // white tunnel → #fff until drop, then #000 for the wave wait (bloom + stickers)
+    const bg = new THREE.Color('#ffffff')
+    if (isBlackTunnelActive || isBlackTitleActive) {
+      bg.set('#000000')
+    } else if (isWhiteTunnelActive) {
+      bg.set(astronautDropRatio < 1 ? '#ffffff' : '#000000')
     }
     bgMatPlane.uniforms.u_color.value.copy(bg)
-    // Keep scene.background null so post RT preserves fragment alpha (bloom mask)
     scene.background = null
     renderer.setClearColor(bg, post.clearAlpha)
     sharedUniforms.u_bgColor.value.copy(bg)
     if (stickyEl && !stickyEl.classList.contains('is-windowed')) {
+      // Wait: transparent so page/footer white shows under clearAlpha→0
       stickyEl.style.background =
-        astronautDropRatio >= 1 && whiteTunnelWaitRatio > 0.02
+        astronautDropRatio >= 1
           ? 'transparent'
           : bg.getStyle()
     }
@@ -1144,7 +1183,11 @@ void main(){
     if (!pinned || windowed) {
       document.documentElement.style.background = ''
       document.body.style.background = ''
-    } else if (isWhiteTunnelActive || whiteTunnelWaitRatio > 0) {
+    } else if (isWhiteTunnelActive && astronautDropRatio >= 1) {
+      // Wave wait sits on the white page (footer rising) like Lusion
+      document.documentElement.style.background = '#ffffff'
+      document.body.style.background = '#ffffff'
+    } else if (isWhiteTunnelActive) {
       document.documentElement.style.background = '#ffffff'
       document.body.style.background = '#ffffff'
     } else if (isBlackTunnelActive || isBlackTitleActive) {
@@ -1242,18 +1285,21 @@ void main(){
     astronautRoot.visible = showRatio > 0.02
 
     // —— Exact Lusion GoalTunnels FOV ——
-    // cameraFov from mix(frameHeight, viewportHeight, blackFrameIn|whiteFrame)
-    // frameHeight = #home-goal-image-in hole (screen clip while windowed)
     const vhPx = window.innerHeight || 1
     const clipEl = stickyEl?.querySelector?.('[data-goal-screen-clip]')
+    // After glass exit (wait), always use full viewport so the wave fills like Lusion
     const frameH = Math.max(
       1,
-      (windowed && clipEl?.clientHeight) || stickyEl?.clientHeight || vhPx
+      whiteTunnelWaitRatio > 0.001 || astronautDropRatio >= 1
+        ? vhPx
+        : (windowed && clipEl?.clientHeight) || stickyEl?.clientHeight || vhPx
     )
     const frameMix =
       blackFrameInRatio < 1
         ? blackFrameInRatio
-        : 1 - whiteFrameRatio
+        : whiteTunnelWaitRatio > 0.001 || astronautDropRatio >= 1
+          ? 1
+          : 1 - whiteFrameRatio
     const mixedFrameH = THREE.MathUtils.lerp(frameH, vhPx, frameMix)
     const dist = DEFAULT_CAM.distanceTo(DEFAULT_LOOK)
     const expectedRad = (EXPECTED_FOV / 180) * Math.PI
@@ -1525,26 +1571,20 @@ void main(){
     let loopTo
     let allowWrap = true
     if (drop < 0.5) {
-      // Entry idle loop (frames 0–89)
+      // Exact Lusion idle: smoothstep(-0.3,1,blackTitleRatio) * 0.75
       pauseLoopTime = 0
-      speed =
-        blackTitleRatio < 0.08
-          ? smoothstep(-0.3, 1, blackTitleRatio) * 0.25
-          : smoothstep(-0.3, 1, blackTitleRatio) * 0.75
+      speed = smoothstep(-0.3, 1, blackTitleRatio) * 0.75
       loopFrom = 0
       loopTo = 89
       faceCardMat.uniforms.u_cardOpacity.value = 0
     } else {
-      // Wave loop (frames 140–287). Hold until late drop, then play through;
-      // after drop completes, loop forever on the white outro (Lusion wait).
+      // Wave loop (frames 140–287). Hold until late drop, then loop on wait.
       if (pauseLoopTime === Number.POSITIVE_INFINITY && drop >= 1) {
         pauseLoopTime = 0
         animationTime = 0
       }
-      speed =
-        drop >= 1
-          ? 1
-          : fit(drop, 0.88, 1, 0, 1)
+      // Exact Lusion: speed = fit(drop, 0.9, 1, 0, 1) → 1.0 when drop≥1
+      speed = fit(drop, 0.9, 1, 0, 1)
       loopFrom = 140
       loopTo = Math.min(frameCount - 1, 287)
       const flicker = Math.min(
